@@ -72,6 +72,12 @@ def tts_zipvoice(model_dir, chip, lang, text, outp):
 
 def tts_cosyvoice2(model_dir, chip, lang, text, outp):
     # C++ LLM 二进制，需 tokenizer server(127.0.0.1:12345) + prompt_files；逐条重载，较重
+    # 板端建议拷贝到本地盘运行（NFS 读仅 2.7MB/s 会拖慢 embed 加载）：
+    #   COSYVOICE2_DIR=/root/cosyvoice2_local bash tts/run.sh
+    import os
+    local = os.environ.get("COSYVOICE2_DIR")
+    if local and Path(local).exists():
+        model_dir = Path(local)
     return str(model_dir), ["./main_ax650",
             "--template_filename_axmodel", "CosyVoice-BlankEN-Ax650-prefill_512/qwen2_p128_l%d_together.axmodel",
             "--token2wav_axmodel_dir", "token2wav-axmodels/", "--n_timesteps", "1",

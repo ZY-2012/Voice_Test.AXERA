@@ -59,6 +59,10 @@ def main():
             ok += 1
             continue  # 已合成跳过（幂等重跑）
         workdir, argv = spec["builder"](model_dir, args.chip, lang, text, outp.resolve())
+        # 输出 output*.wav 的模型(如 cosyvoice2)：先清旧文件，否则会取到上次残留
+        if spec.get("out_glob"):
+            for f in Path(workdir).glob(spec["out_glob"]):
+                f.unlink()
         t0 = time.perf_counter()
         try:
             r = subprocess.run(argv, cwd=workdir, stdout=logf, stderr=subprocess.STDOUT,
@@ -68,7 +72,7 @@ def main():
         infer_s += time.perf_counter() - t0
         # cosyvoice2 输出 output*.wav，需改名到 outp
         if spec.get("out_glob") and not outp.exists():
-            cand = sorted(Path(workdir).glob(spec["out_glob"]))
+            cand = sorted(Path(workdir).glob(spec["out_glob"]), key=lambda p: p.stat().st_mtime)
             if cand:
                 shutil.move(str(cand[-1]), outp)
         if outp.exists():
