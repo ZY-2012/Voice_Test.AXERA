@@ -41,12 +41,16 @@ def main():
         rows = rows[:lim]
     infer_s = audio_s = 0.0
     ok = 0
+    logf = (out_dir / "_run.log").open("a")
     for uid, clean, noisy in rows:
         noisy = remap(noisy)
         outp = out_dir / f"{uid}.wav"
         workdir, argv = spec["builder"](model_dir, args.chip, noisy, outp.resolve())
         t0 = time.perf_counter()
-        r = subprocess.run(argv, cwd=workdir, capture_output=True, text=True)
+        try:
+            r = subprocess.run(argv, cwd=workdir, stdout=logf, stderr=subprocess.STDOUT, timeout=600)
+        except subprocess.TimeoutExpired:
+            r = None  # 完成后不退出的二进制：输出已生成即可
         infer_s += time.perf_counter() - t0
         try:
             audio_s += sf.info(noisy).duration
@@ -55,7 +59,7 @@ def main():
         if outp.exists():
             ok += 1
         elif ok == 0 and r.returncode != 0:  # 首条失败即打印诊断
-            print(f"  [{args.model}] 首条失败: {' '.join(argv[:4])}...\n  stderr: {r.stderr[-400:]}")
+            print(f"  [{args.model}] 首条失败: {' '.join(argv[:4])}... 日志见 {out_dir}/_run.log 尾部")
     rtf = infer_s / audio_s if audio_s else float("nan")
     print(f">>> {args.model}: 增强 {ok}/{len(rows)} 条 -> {out_dir}  RTF={rtf:.4f}")
     # RTF 记到旁路文件供 run.sh 读取
