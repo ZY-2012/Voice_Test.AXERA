@@ -71,23 +71,22 @@ Voice_Test.AXERA/
 |---|---|---|
 | SileroVAD | 0.0297（0.95ms/chunk）| 0.7 / 241.8 |
 
-### SE（VoiceBank-DEMAND，PESQ/STOI/SI-SNR + RTF）
-| 模型 | 采样率 | 状态 |
-|---|---|---|
-| GTCRN | 16k | 已接入，指标板端实测中 |
-| FastEnhancer | 16k/48k | 已接入，指标板端实测中 |
+### SE（VoiceBank-DEMAND 200 对，PESQ/STOI/SI-SNR + RTF）
+| 模型 | 采样率 | PESQ | STOI | SI-SNR(dB) | RTF(推理only) |
+|---|---|---|---|---|---|
+| noisy 基线 | 16k | 1.95 | 0.92 | 8.7 | — |
+| GTCRN | 16k | 2.55 | 0.93 | 13.7 | 0.249 |
+| FastEnhancer | 16k/48k | **2.75** | **0.94** | **16.2** | **0.186** |
 
-noisy-vs-clean 基线：PESQ≈1.95 / STOI≈0.92 / SI-SNR≈8.7dB（增强增益参照）。
+### TTS（回环 CER/WER + RTF；主指标为可懂度，AISHELL-3 中文 200 条级）
+| 模型 | 类型 | 语言 | 回环 CER | RTF |
+|---|---|---|---|---|
+| MeloTTS | 预设音色 | zh/en/jp | **12.4%** | 0.139 |
+| ZipVoice | 零样本 | zh/en | 21.7% | NPU 0.155 |
+| CosyVoice2 | 零样本(C++ LLM) | zh/en | 29.3% | 3.24（本地盘）|
+| Kokoro | 预设音色 | zh/en/ja | 70.6% | 10.1（合成偏短，模型问题）|
 
-### TTS（回环 CER/WER + RTF；主指标为可懂度）
-| 模型 | 类型 | 语言 | 状态 |
-|---|---|---|---|
-| Kokoro | 预设音色 | zh/en/ja | 已接入 |
-| MeloTTS | 预设音色 | zh/en/jp | 已接入 |
-| ZipVoice | 零样本 | zh/en | 已接入 |
-| CosyVoice2 | 零样本(C++ LLM) | zh/en | 已接入（较重，默认限条数）|
-
-SE/TTS 数据、制作、评测脚本均已就绪；板端 `run_benchmark.sh se tts` 即出指标。
+> SE/TTS 指标为 AX650N 板端实测（2026-08），测试流程见 `se/README.md`、`tts/README.md`；全量复测 `bash run_benchmark.sh se tts`。
 
 ---
 
