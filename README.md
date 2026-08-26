@@ -18,7 +18,7 @@ bash run_benchmark.sh             # ⑤ 板端跑，出 results/summary.md
 ```
 
 - **数据准备（②③）** 可在任意机器；**模型推理（⑤）** 需 AX 板端（axengine）。
-  本地 `/data/shared/huyuan/` 与板端 `/root/huyuan/workspace/` 为同一共享存储时数据两侧通用。
+  本地与板端为同一共享存储时数据两侧通用（路径自适应见 `tools/common.py`，数据根目录由 `configs/benchmark.yaml` 配置）。
 - 全部路径/参数集中在 `configs/benchmark.yaml`（客户一般只改 `data_root` / `model_root`）。
 - 默认用**确定性抽样的标准子集**（边缘板全量太慢）；`FULL=1 bash prepare_datasets.sh` 跑全量。
 
@@ -51,7 +51,7 @@ Voice_Test.AXERA/
 | **SE**  | VoiceBank-DEMAND | 824 对 | 200 对 | PESQ/STOI/SI-SNR |
 | **TTS** | LJSpeech英 + AISHELL-3中 | 500 + 1948 | 各 200 | 回环CER + MCD + RTF |
 
-数据来源、制作细节、缺失说明见各模块 `README.md` 与 `tools/数据总结.md`。
+数据来源、制作细节、缺失说明见各模块 `README.md`；**数据集目录/下载地址/数量速查见仓库根 `数据清单.md`**，完整制作方法见 `tools/数据总结.md`。
 
 ---
 
