@@ -1,0 +1,17 @@
+# Voice_Test.AXERA 评测/制作依赖（host 数据准备端 与 AX 板端 base 环境通用）
+# 板端 axengine 由 Axera 系统预装，不在此列。torch 系列板端需装 CPU 版（见 setup_env.sh）。
+soundfile
+librosa
+numpy
+pandas
+pyyaml
+editdistance
+pesq
+pystoi
+praat-textgrids
+pyarrow
+datasets
+huggingface_hub
+modelscope
+funasr
+tqdm

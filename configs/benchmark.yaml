@@ -1,0 +1,77 @@
+# Voice_Test.AXERA 基准配置
+# 所有脚本从此文件读取路径与参数。客户一般只需改 data_root / model_root。
+
+# ============ 路径 ============
+paths:
+  # 数据根目录（下载/制作的所有测试数据）。本地与 AX 板端为同一共享存储时两侧一致。
+  data_root: /data/shared/huyuan/8860_datasets
+  # 已适配模型根目录（axmodel + 各模型推理仓库）
+  model_root: /data/shared/huyuan/8860_export
+  # 结果输出目录（相对本仓库）
+  results_dir: results
+
+# ============ 下载 ============
+download:
+  hf_endpoint: https://hf-mirror.com     # 国内镜像加速
+  aria2c_conn: 16                        # aria2c 每文件连接数
+
+# ============ 子集抽样（默认 benchmark 口径）============
+# 边缘板全量太慢，默认用确定性抽样的固定子集；跑全量加 --full。
+subset:
+  seed: 20240824          # 确定性抽样随机种子（固定→可复现）
+  asr:
+    zh_per_set: 200       # 中文每数据集抽样条数（AISHELL-1）
+    en_per_set: 100       # 英文每子集抽样条数（ESB 各子集）
+  vad:
+    en_utts: 200          # LibriVAD/AISHELL 逐句集抽样条数
+    picovoice_full: true  # Picovoice 长流是单条音频，不抽样
+  se:
+    pairs: 200            # VoiceBank-DEMAND 抽样对数
+  tts:
+    zh_utts: 200          # AISHELL-3 抽样条数
+    en_utts: 200          # LJSpeech 抽样条数
+
+# ============ VAD 混噪参数（Picovoice 口径）============
+vad_mix:
+  snr_db: 0
+  frame_len: 512          # 32ms @ 16kHz
+  silence_sec: 20
+  seed: 778               # 与 Picovoice 官方一致
+
+# ============ 模型（HF AXERA-TECH 托管的 axmodel）============
+# chip: ax650 / ax630c / ax620q
+models:
+  chip: ax650
+  asr:
+    whisper:     { hf: AXERA-TECH/Whisper,        variants: [tiny, base, small, turbo] }
+    sensevoice:  { hf: AXERA-TECH/SenseVoice }
+    firered:     { hf: AXERA-TECH/FireRedASR-AED-L }
+    zipformer:   { hf: AXERA-TECH/Zipformer }
+    wenet:       { hf: AXERA-TECH/wenet }
+  vad:
+    silero:      { hf: AXERA-TECH/silero-vad }
+  se:
+    # 已适配（本地目录名见 tools/model_registry.py；命令模板亦在其中）
+    gtcrn:        { hf: AXERA-TECH/gtcrn.axera,        dir: gtcrn.axera }
+    fastenhancer: { hf: AXERA-TECH/fastenhancer.axera, dir: fastenhancer.axera }
+  tts:
+    # 已适配（预设音色 kokoro/melotts；零样本 zipvoice/cosyvoice2）
+    kokoro:       { hf: AXERA-TECH/kokoro.axera,     dir: kokoro.axera }
+    melotts:      { hf: AXERA-TECH/MeloTTS,          dir: MeloTTS }
+    zipvoice:     { hf: AXERA-TECH/ZipVoice.AXERA,   dir: ZipVoice.AXERA }
+    cosyvoice2:   { hf: AXERA-TECH/Cosyvoice2.Axera, dir: CosyVoice2 }
+
+# ============ 评估口径 ============
+eval:
+  asr:
+    zh_metric: cer        # 中文字符级
+    en_metric: wer        # 英文词级
+    normalize: [lower, remove_punct]
+  vad:
+    frame_ms: 32          # 帧级评估粒度
+    metrics: [accuracy, precision, recall, f1, roc_auc]
+  se:
+    metrics: [pesq, stoi, si_snr]
+  tts:
+    asr_model: sensevoice # 回环可懂度用哪个已适配 ASR
+    metrics: [cer_loopback, mcd, rtf]
