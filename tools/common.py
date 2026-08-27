@@ -31,6 +31,23 @@ def load_config(path=None):
     return _CFG
 
 
+def module_names(cfg=None):
+    """模块清单（单一事实来源）：优先 config 的 modules: 顺序；缺失时从 models: 键派生。"""
+    cfg = cfg or load_config()
+    mods = cfg.get("modules")
+    if isinstance(mods, dict) and mods:
+        return list(mods.keys())
+    return list((cfg.get("models") or {}).keys()) or ["asr", "vad", "se", "tts"]
+
+
+def module_label(module, cfg=None):
+    """模块展示名（config modules.<m>.label；缺失回退模块名大写）。"""
+    cfg = cfg or load_config()
+    node = (cfg.get("modules") or {}).get(module) or {}
+    return node.get("label", module.upper())
+
+
+
 # host 与 板端 的同一挂载前缀（本地 ↔ AX 板端）
 _MOUNT_PAIRS = [("/data/shared/huyuan", "/root/huyuan/workspace")]
 

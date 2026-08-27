@@ -25,5 +25,5 @@ for m in "${MODULES[@]}"; do
 done
 
 echo "############## 汇总 ##############"
-$PY "$REPO_DIR/tools/aggregate_results.py" && \
+$PY "$REPO_DIR/tools/report.py" && \
 echo ">>> 结果: $RESULTS/summary.md"

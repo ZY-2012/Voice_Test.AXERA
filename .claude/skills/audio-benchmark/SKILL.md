@@ -30,7 +30,7 @@ bash run_benchmark.sh       # ⑤ 板端跑分 → results/summary.md
 ```
 - 所有路径/参数在 `configs/benchmark.yaml`；脚本通过 `tools/cfg.py <key.path>` 读配置
 - 小样冒烟：`LIMIT=5`（ASR/SE）、`TTS_LIMIT=3`、`PICO_SEC=600`（picovoice 长流截秒）
-- 结果：`results/<module>.csv` → `tools/aggregate_results.py` → `summary.md`
+- 结果：`results/<module>.csv` → `python tools/report.py` → `summary.md`；**提交前必跑 `python tools/report.py --readme`** 刷新顶层 README 自动指标表
 
 ## 关键约定（口径）
 
@@ -63,9 +63,6 @@ bash run_benchmark.sh       # ⑤ 板端跑分 → results/summary.md
 
 **全量长任务**：板端 `setsid bash -c '...' &` 脱离 SSH（不挂本地轮询器，用户要进度时前台查）
 
-## 当前实测基准（AX650N，中文 AISHELL-3）
+## 指标唯一事实来源
 
-- ASR CER(200条)：FireRedASR 0.57% < SenseVoice 5.51% ≈ WeNet 5.58% < Whisper-turbo 10.07% < Zipformer 13.22% < whisper small/base/tiny 15/22/43%
-- VAD 帧级 F1：librivad 0.966 / picovoice 0.959 / aishell1 0.878；SileroVAD RTF 0.029
-- SE (VoiceBank-DEMAND)：FastEnhancer PESQ 2.75/RTF 0.186 > GTCRN 2.55/0.249 > noisy基线 1.95
-- TTS 回环 CER：MeloTTS 12.4% < ZipVoice 21.7% < CosyVoice2 29.3% < Kokoro 70.6%（kokoro 中文合成偏短，模型问题）
+指标一律以 `results/*.csv` 经 `python tools/report.py` 生成为准（顶层 README 自动表 / results/summary.md）。任何文档不手写指标数字；扩展步骤见 `CONTRIBUTING.md`（新增数据集/模型/模块均为 config+目录两步）。

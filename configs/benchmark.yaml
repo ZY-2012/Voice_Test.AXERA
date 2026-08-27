@@ -15,6 +15,21 @@ download:
   hf_endpoint: https://hf-mirror.com     # 国内镜像加速
   aria2c_conn: 16                        # aria2c 每文件连接数
 
+# ============ 模块声明（单一事实来源：顺序即展示顺序）============
+# label 供 README/汇总标题用；scope 为口径标注模板（{...} 引用 subset 计数，report.py 填充）
+modules:
+  asr: { label: 语音识别 ASR,   scope: "AISHELL-1 中文 {zh_per_set} 条 CER / ESB 英文各 {en_per_set} 条 WER · RTF 不含加载" }
+  vad: { label: 语音活动检测 VAD, scope: "逐句集各 {en_utts} 条 + Picovoice 长流 · 帧级指标" }
+  se:  { label: 语音增强 SE,    scope: "VoiceBank-DEMAND {pairs} 对 · PESQ/STOI/SI-SNR · RTF 不含加载" }
+  tts: { label: 语音合成 TTS,   scope: "AISHELL-3 中文 {zh_utts} 条回环 CER · RTF 不含加载" }
+
+# ============ 汇总/注入（report.py）============
+report:
+  readme: README.md            # 注入目标（相对仓库根）
+  # 每模块主指标（排序/小结用）；缺省取 eval.<module>.metrics[0]
+  primary_metric: { asr: cer, vad: f1, se: pesq, tts: cer_loopback }
+
+
 # ============ 子集抽样（默认 benchmark 口径）============
 # 边缘板全量太慢，默认用确定性抽样的固定子集；跑全量加 --full。
 subset:
