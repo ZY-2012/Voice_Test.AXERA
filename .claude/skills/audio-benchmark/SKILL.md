@@ -26,11 +26,13 @@ bash setup_env.sh           # ① 依赖（板端 --board；板端补: pesq pyst
 bash download_datasets.sh   # ② 下原始数据（asr/vad/se/tts 可选模块）
 bash prepare_datasets.sh    # ③ 制作测试集 + 确定性抽标准子集（FULL=1 全量）
 bash download_models.sh     # ④ 从 HF AXERA-TECH 拉 axmodel
-bash run_benchmark.sh       # ⑤ 板端跑分 → results/summary.md
+bash run_benchmark.sh       # ⑤ 板端跑分 → results/*.csv（末尾自动跑 report.py 生成 summary.md）
 ```
+- 指标刷新（提交前必做）：`python tools/report.py --readme` 把 CSV 指标注入顶层 README 标记区块（--dry-run 预览；--only <module> 单模块调试）
+
 - 所有路径/参数在 `configs/benchmark.yaml`；脚本通过 `tools/cfg.py <key.path>` 读配置
 - 小样冒烟：`LIMIT=5`（ASR/SE）、`TTS_LIMIT=3`、`PICO_SEC=600`（picovoice 长流截秒）
-- 结果：`results/<module>.csv` → `python tools/report.py` → `summary.md`；**提交前必跑 `python tools/report.py --readme`** 刷新顶层 README 自动指标表
+- 结果：`results/<module>.csv` → `python tools/report.py` → `summary.md`；**提交前必跑 `python tools/report.py --readme`** 刷新顶层 README 自动指标表。README 标记区块须成对（`<!-- RESULTS:<m> -->…<!-- /RESULTS:<m> -->`、`<!-- STATUS-MATRIX -->…<!-- /STATUS-MATRIX -->`），report 注入幂等
 
 ## 关键约定（口径）
 
@@ -38,6 +40,7 @@ bash run_benchmark.sh       # ⑤ 板端跑分 → results/summary.md
 - ASR：中文 CER / 英文 WER，去标点转小写；子集同时提供 `wav/` 与 `aishell_S0764/`(软链) 两种音频目录名（各模型 test_wer 约定不同）
 - TTS 主指标：**回环 CER**（合成音过 SenseVoice test_wer，输入文本作参考，`tools/metrics_tts.py` 口径）
 - 子集抽样用 (seed,utt_id) 哈希确定性排序，可复现
+- **模块/模型清单单一事实来源**：config `modules:`/`models:` 节；shell 用 `tools/cfg.py modules`（dict→空格分隔键）取清单，python 用 `common.module_names()`；新增模型=registry+config 两步（`tools/model_registry.py` + `configs/benchmark.yaml`），新增模块=config+建目录两步，详见 `CONTRIBUTING.md`
 
 ## 已知坑（重要，踩过并修复）
 
@@ -54,12 +57,14 @@ bash run_benchmark.sh       # ⑤ 板端跑分 → results/summary.md
    - 板端 WeNet units.txt 已是 AIShell-1 版（4233 词），勿换
 9. **git 操作只在 host 端做**（板端 root 对 NFS 仓库 dubious ownership）；提交前确认无模型/缓存产物混入（如 melotts 的 bert-* 目录，已 gitignore）；推送用 SSH remote `git@github.com:ZY-2012/Voice_Test.AXERA.git`（HTTPS 凭据在 VS Code askpass 不可用）
 10. pkill 大批进程后 NPU 可能瞬时异常（AX_ENGINE_CreateHandle failed），重试一次通常恢复
+11. **results/ 与 tools/ 属主**：板端 root 跑完会写 root 属主文件，host 端再跑脚本可能 PermissionError——板端 `chown -R 1055:1001 <repo>/results <repo>/tools` 一次恢复；`__pycache__` 同理（勿在 NFS 上混用两端 python）
+12. **README 注入标记**：只写开始标记不写结束标记时 report.py 会告警跳过（`<!-- RESULTS:x --><!-- /RESULTS:x -->` 连写即可）
 
 ## 常见任务 SOP
 
-**补测某模型**：确认数据/模型就绪 → 板端 `DATASET=aishell1 ASR_MODELS='xxx' LIMIT=5 bash asr/run.sh` 冒烟 → 全量 → 更新 csv/README → host 端 aggregate + commit + push
+**补测某模型**：确认数据/模型就绪 → 板端 `DATASET=aishell1 ASR_MODELS='xxx' LIMIT=5 bash asr/run.sh` 冒烟 → 全量 → host 端 `python tools/report.py --readme`（生成 summary + 刷新 README）→ commit + push
 
-**新增模型**：`tools/model_registry.py` 加 builder（cwd+argv）→ `configs/benchmark.yaml` 注册 dir/hf → 模块 run.sh 会自动纳入
+**新增模型**：`tools/model_registry.py` 加 builder（SE/TTS；ASR 只需 config）→ `configs/benchmark.yaml` 的 `models.<module>` 注册 `{hf,dir}` → 模块 run.sh 自动纳入 → 冒烟/全量 → `report.py --readme`。新增数据集/模块/测试标准步骤见 `CONTRIBUTING.md`
 
 **全量长任务**：板端 `setsid bash -c '...' &` 脱离 SSH（不挂本地轮询器，用户要进度时前台查）
 
