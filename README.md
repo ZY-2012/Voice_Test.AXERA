@@ -122,9 +122,10 @@ Voice_Test.AXERA/
 
 | 模型 | PESQ | STOI | SI-SNR | RTF |
 |---|---|---|---|---|
-| fastenhancer | **2.75** | **0.936** | **16.2 dB** | 0.186 |
+| fastenhancer | **2.75** | **0.936** | 16.2 dB | 0.186 |
 | gtcrn | 2.55 | 0.925 | 13.7 dB | 0.249 |
-| deepfilternet3 | 2.13 | 0.881 | 13.3 dB | **0.101** |
+| gcrn | 2.20 | 0.923 | **16.8 dB** | **0.051** |
+| deepfilternet3 | 2.13 | 0.881 | 13.3 dB | 0.101 |
 | noisy-baseline | 1.95 | 0.924 | 8.7 dB | — |
 
 > 最优：fastenhancer PESQ=2.75

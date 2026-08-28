@@ -1,6 +1,6 @@
 # SE 模块（语音增强）
 
-语音增强板端 benchmark。适配模型：**GTCRN**、**FastEnhancer**、**DeepFilterNet3**（AX650N/AX630C/AX620Q）。
+语音增强板端 benchmark。适配模型：**GTCRN**、**FastEnhancer**、**DeepFilterNet3**、**GCRN**（AX650N/AX630C/AX620Q）。
 
 ## 1. 数据集
 
@@ -37,3 +37,4 @@ LIMIT=6 SE_MODELS="gtcrn" bash se/run.sh   # 小样冒烟
   但其 CLI 不单独输出推理时间（墙钟含加载），故 RTF 以 python 载入一次的推理-only 口径为准
 - GTCRN 无 C++ 可执行
 - DeepFilterNet3 为 **48kHz 模型**：16k noisy 重采样 48k 增强后降回 16k 评估（`enhance_warm.py` 内置）；RTF 为三模型最快，STOI 略降为 16k↔48k 重采样特性
+- GCRN SDK 的 `enhance()` 要求 **int16 PCM 输入**（float 输入会导致输出崩坏，已踩坑）

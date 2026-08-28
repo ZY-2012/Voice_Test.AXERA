@@ -129,10 +129,32 @@ def run_deepfilternet3(model_dir, chip, rows, out_dir):
     return ok, (infer_s / audio_s if audio_s else float("nan"))
 
 
+def run_gcrn(model_dir, chip, rows, out_dir):
+    """GCRN：16kHz。载入一次（GCRNDenoiser SDK）。SDK enhance() 期望 int16 PCM，输出 float32 波形。"""
+    sys.path.insert(0, str(model_dir / "python"))
+    from gcrn_sdk import GCRNDenoiser
+    denoiser = GCRNDenoiser(str(model_dir / "models" / "model.axmodel"))   # load once
+    infer_s = audio_s = 0.0
+    ok = 0
+    for k, (uid, noisy) in enumerate(rows):
+        wav, s = sf.read(noisy, dtype="int16")     # SDK 要求 int16
+        if wav.ndim > 1:
+            wav = wav.mean(1)
+        t0 = time.perf_counter()
+        out = denoiser.enhance(wav)                # 返回 float32 波形（约 [-1,1]）
+        dt = time.perf_counter() - t0
+        if k > 0:  # warmup 跳过首条
+            infer_s += dt
+            audio_s += len(wav) / 16000
+        sf.write(out_dir / f"{uid}.wav", out, 16000)
+        ok += 1
+    return ok, (infer_s / audio_s if audio_s else float("nan"))
+
+
 def main():
     cfg = load_config()
     ap = argparse.ArgumentParser()
-    ap.add_argument("--model", required=True, choices=["gtcrn", "fastenhancer", "deepfilternet3"])
+    ap.add_argument("--model", required=True, choices=["gtcrn", "fastenhancer", "deepfilternet3", "gcrn"])
     ap.add_argument("--chip", default=cfg["models"]["chip"])
     ap.add_argument("--limit", type=int, default=int(os.environ.get("LIMIT", "0")))
     args = ap.parse_args()
@@ -141,7 +163,7 @@ def main():
     out_dir.mkdir(parents=True, exist_ok=True)
     rows = _load_scp(cfg, args.limit)
     fn = {"gtcrn": run_gtcrn, "fastenhancer": run_fastenhancer,
-          "deepfilternet3": run_deepfilternet3}[args.model]
+          "deepfilternet3": run_deepfilternet3, "gcrn": run_gcrn}[args.model]
     ok, rtf = fn(model_dir, args.chip, rows, out_dir)
     print(f">>> {args.model}: 增强 {ok} 条 -> {out_dir}  热启动RTF={rtf:.4f}")
     (out_dir / "_rtf.txt").write_text(f"{rtf:.4f}\n")

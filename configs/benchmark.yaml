@@ -70,6 +70,7 @@ models:
     gtcrn:        { hf: AXERA-TECH/gtcrn.axera,        dir: gtcrn.axera }
     fastenhancer: { hf: AXERA-TECH/fastenhancer.axera, dir: fastenhancer.axera }
     deepfilternet3: { hf: AXERA-TECH/DeepFilterNet3.AXERA, dir: DeepFilterNet3.AXERA_HUG }  # 48kHz 模型
+    gcrn:          { hf: AXERA-TECH/GCRN,              dir: GCRN }                          # 16kHz
   tts:
     # 已适配（预设音色 kokoro/melotts；零样本 zipvoice/cosyvoice2）
     kokoro:       { hf: AXERA-TECH/kokoro.axera,     dir: kokoro.axera }
