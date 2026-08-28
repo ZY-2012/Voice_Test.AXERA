@@ -5,7 +5,7 @@ description: Axera 平台音频基准测试（ASR/VAD/SE/TTS 四模块）。当�
 
 # Axera 音频基准测试（Voice_Test.AXERA）
 
-四模块（ASR/VAD/SE/TTS）统一 benchmark 框架，目标：客户 5 步一键复现已适配模型指标。
+四模块（ASR/VAD/SE/TTS）统一 benchmark 框架，目标：使用者 5 步一键复现已适配模型指标。
 
 ## 目录与主机
 

@@ -103,10 +103,36 @@ def run_fastenhancer(model_dir, chip, rows, out_dir):
     return ok, (infer_s / audio_s if audio_s else float("nan"))
 
 
+def run_deepfilternet3(model_dir, chip, rows, out_dir):
+    """DeepFilterNet3：48kHz 模型。载入一次，noisy 16k→48k 重采样增强，输出降回 16k（与 clean 同域评估）。"""
+    import librosa
+    sys.path.insert(0, str(model_dir))
+    from deepfilternet3_ax import DeepFilterNet3
+    enh = DeepFilterNet3(model_dir / "axmodels")   # load once
+    infer_s = audio_s = 0.0
+    ok = 0
+    for k, (uid, noisy) in enumerate(rows):
+        wav, s = sf.read(noisy, dtype="float32")
+        if wav.ndim > 1:
+            wav = wav.mean(1)
+        if s != 48000:
+            wav = librosa.resample(wav, orig_sr=s, target_sr=48000)
+        t0 = time.perf_counter()
+        out = enh.enhance(wav)
+        dt = time.perf_counter() - t0
+        if k > 0:  # warmup 跳过首条
+            infer_s += dt
+            audio_s += len(wav) / 48000
+        out16 = librosa.resample(out, orig_sr=48000, target_sr=16000)
+        sf.write(out_dir / f"{uid}.wav", out16, 16000)
+        ok += 1
+    return ok, (infer_s / audio_s if audio_s else float("nan"))
+
+
 def main():
     cfg = load_config()
     ap = argparse.ArgumentParser()
-    ap.add_argument("--model", required=True, choices=["gtcrn", "fastenhancer"])
+    ap.add_argument("--model", required=True, choices=["gtcrn", "fastenhancer", "deepfilternet3"])
     ap.add_argument("--chip", default=cfg["models"]["chip"])
     ap.add_argument("--limit", type=int, default=int(os.environ.get("LIMIT", "0")))
     args = ap.parse_args()
@@ -114,7 +140,8 @@ def main():
     out_dir = Path(cfg["paths"]["data_root"]) / "benchmark" / "se" / "enhanced" / args.model
     out_dir.mkdir(parents=True, exist_ok=True)
     rows = _load_scp(cfg, args.limit)
-    fn = {"gtcrn": run_gtcrn, "fastenhancer": run_fastenhancer}[args.model]
+    fn = {"gtcrn": run_gtcrn, "fastenhancer": run_fastenhancer,
+          "deepfilternet3": run_deepfilternet3}[args.model]
     ok, rtf = fn(model_dir, args.chip, rows, out_dir)
     print(f">>> {args.model}: 增强 {ok} 条 -> {out_dir}  热启动RTF={rtf:.4f}")
     (out_dir / "_rtf.txt").write_text(f"{rtf:.4f}\n")

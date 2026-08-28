@@ -25,6 +25,12 @@ def se_fastenhancer(model_dir, chip, inp, outp):
             "--model", "../models/16k/model.axmodel", "--input", str(inp), "--output", str(outp)]
 
 
+def se_deepfilternet3(model_dir, chip, inp, outp):
+    # 48kHz 模型；inference.py: python inference.py input -o output --model-dir axmodels
+    return str(model_dir), ["python", "inference.py", str(inp), "-o", str(outp),
+                            "--model-dir", "axmodels"]
+
+
 # ---------------- TTS：输入 text -> 输出 wav ----------------
 # 预设音色（preset）：直接 text->wav；零样本（zeroshot）：用仓库自带固定 prompt。
 
@@ -97,6 +103,7 @@ REGISTRY = {
     # SE
     "gtcrn":        {"kind": "se", "sr": 16000, "builder": se_gtcrn},
     "fastenhancer": {"kind": "se", "sr": 16000, "builder": se_fastenhancer},
+    "deepfilternet3": {"kind": "se", "sr": 48000, "builder": se_deepfilternet3},
     # TTS
     "kokoro":       {"kind": "tts", "sr": 24000, "type": "preset",   "langs": ["zh", "en"], "builder": tts_kokoro},
     "melotts":      {"kind": "tts", "sr": 44100, "type": "preset",   "langs": ["zh", "en"], "builder": tts_melotts},

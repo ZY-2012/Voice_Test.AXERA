@@ -1,7 +1,7 @@
 # Voice_Test.AXERA
 
 Axera 平台音频模型 benchmark：**ASR / VAD / SE / TTS** 四模块统一测试框架。
-目标——客户按 5 步一键复现已适配模型的板端指标。
+目标——使用者按 5 步一键复现已适配模型的板端指标。
 
 > 模型与数据**不入库**。本仓库只含脚本+文档；数据目录/数量/下载地址速查见 [数据清单.md](数据清单.md)，制作方法与已知限制见 `tools/数据总结.md`。
 
@@ -29,7 +29,7 @@ bash run_benchmark.sh             # ⑤ 板端跑分                        → 
 
 - **数据准备（②③）** 可在任意机器；**模型推理（⑤）** 需 AX 板端（axengine）。
   本地与板端为同一共享存储时数据两侧通用（路径自适应见 `tools/common.py`，数据根目录由 `configs/benchmark.yaml` 配置）。
-- 全部路径/参数集中在 `configs/benchmark.yaml`（客户一般只改 `paths.data_root` / `paths.model_root`）。
+- 全部路径/参数集中在 `configs/benchmark.yaml`（使用者一般只改 `paths.data_root` / `paths.model_root`）。
 - 默认用**确定性抽样的标准子集**（边缘板全量太慢）；`FULL=1 bash prepare_datasets.sh` 跑全量。
 - 板端全量长任务可用 `bash launch_bench.sh`（setsid 脱离 SSH 后台跑，日志 `results/run_all.log`）。
 - 跑分完成后在仓库根执行 `python tools/report.py --readme`，把指标刷新进本 README（提交前必做）。
@@ -122,8 +122,9 @@ Voice_Test.AXERA/
 
 | 模型 | PESQ | STOI | SI-SNR | RTF |
 |---|---|---|---|---|
-| fastenhancer | **2.75** | **0.936** | **16.2 dB** | **0.186** |
+| fastenhancer | **2.75** | **0.936** | **16.2 dB** | 0.186 |
 | gtcrn | 2.55 | 0.925 | 13.7 dB | 0.249 |
+| deepfilternet3 | 2.13 | 0.881 | 13.3 dB | **0.101** |
 | noisy-baseline | 1.95 | 0.924 | 8.7 dB | — |
 
 > 最优：fastenhancer PESQ=2.75
@@ -149,7 +150,7 @@ Voice_Test.AXERA/
 
 ## 模型来源
 
-- axmodel 权重：HF `AXERA-TECH/*`（`download_models.sh` 自动拉取，芯片见 config `models.chip`）
+- axmodel 权重：**HF [AXERA-TECH](https://huggingface.co/AXERA-TECH)**（本工程全部模型均在该组织下，`download_models.sh` 自动拉取，芯片见 config `models.chip`）
 - 推理代码：各模型 GitHub 仓库（`ml-inory/*.axera` 等），**需手动 clone 到 `model_root/<model>/`**（download_models.sh 只下 axmodel 权重）
 - 环境：板端 base conda + axengine；torch 系列装 CPU 版（`setup_env.sh --board`）
 
