@@ -28,7 +28,7 @@ class Fmt:
     label: str          # 列显示名
     digits: int         # 小数位（-1=取整）
     unit: str           # 后缀单位
-    lower_better: bool   # 越低越好
+    lower_better: bool   # 越低越好；None=非单调指标（如时长比越接近 1 越好），不标记最优
 
 
 # 指标 → 显示规则；未列出的兜底 3 位小数、越高越好
@@ -37,6 +37,17 @@ METRIC_FORMATS = {
     "wer":           Fmt("WER", 2, "%", True),
     "cer_loopback":  Fmt("回环CER", 2, "%", True),
     "wer_loopback":  Fmt("回环WER", 2, "%", True),
+    "cer_gt":        Fmt("GT锚点CER", 2, "%", True),
+    "wer_gt":        Fmt("GT锚点WER", 2, "%", True),
+    "sub_rate":      Fmt("替换率", 2, "%", True),
+    "del_rate":      Fmt("删除率", 2, "%", True),
+    "ins_rate":      Fmt("插入率", 2, "%", True),
+    "sub_rate_gt":   Fmt("替换率(GT)", 2, "%", True),
+    "del_rate_gt":   Fmt("删除率(GT)", 2, "%", True),
+    "ins_rate_gt":   Fmt("插入率(GT)", 2, "%", True),
+    "len_ratio":     Fmt("时长比", 3, "", None),       # 越接近 1 越好（非单调，不标最优）
+    "audio_avg_s":   Fmt("均长", 2, "s", None),        # 合成音平均时长；RTF 解读的必要上下文
+    "success_rate":  Fmt("成功率", 1, "%", False),
     "f1":            Fmt("F1", 3, "", False),
     "accuracy":      Fmt("准确率", 3, "", False),
     "precision":     Fmt("精确率", 3, "", False),
@@ -47,6 +58,7 @@ METRIC_FORMATS = {
     "si_snr":        Fmt("SI-SNR", 1, " dB", False),
     "mcd":           Fmt("MCD", 2, " dB", True),
     "rtf":           Fmt("RTF", 3, "", True),      # 独立列（不在 metric 中）
+    "rtf_e2e":       Fmt("RTF(含加载)", 2, "", True),  # synth_batch 逐条子进程口径，与 RTF 主口径不可混比
     "cmm_mb":        Fmt("CMM(MB)", -1, "", True),
     "os_mb":         Fmt("OS(MB)", -1, "", True),
 }
@@ -81,10 +93,18 @@ def load_rows(results_dir):
 def pivot(module_rows):
     """把某模块的记录透视成 (model,dataset) 行：
     返回 (records, metric_cols, has_multi_dataset, extra_cols)。
-    每条 record: {model, dataset, <metric>: value..., rtf, cmm_mb, os_mb, note}"""
+    每条 record: {model, dataset, <metric>: value..., rtf, cmm_mb, os_mb, note}
+
+    同一 (model,dataset,metric) 出现多行时**取最后一行**（CSV 追加写，故最后 = 最新口径）。
+    典型场景：同模型先后用不同评测 ASR 跑过（如 sensevoice 旧口径 → firered 新口径），
+    两套数值都保留在 CSV 里，表格只展示最新的；被覆盖的会打印告警以免误读。"""
     order = []          # (model,dataset) 保持首见顺序
     rec = {}
     metric_cols = []
+    shadowed = []       # 被后来行覆盖的旧值（口径变更时提示）
+    # CSV 既有 rtf/cmm_mb/os_mb 独立字段，又允许用 metric 列写同名指标（新旧两种写法并存）。
+    # 同名时归并到同一列，否则会渲染出两个 RTF 列。
+    FIELD_METRICS = ("rtf", "cmm_mb", "os_mb")
     for r in module_rows:
         key = (r["model"], r["dataset"])
         if key not in rec:
@@ -93,13 +113,20 @@ def pivot(module_rows):
                         "os_mb": r.get("os_mb", ""), "note": r.get("note", "")}
             order.append(key)
         m = r["metric"]
+        if m in FIELD_METRICS:
+            rec[key][m] = r.get("value", "")     # 归并到同名字段列，不新增 metric 列
+            continue
         if m not in metric_cols:
             metric_cols.append(m)
+        if m in rec[key] and rec[key][m] != r.get("value", ""):
+            shadowed.append((r["model"], r["dataset"], m, rec[key][m], r.get("value", "")))
         rec[key][m] = r.get("value", "")
         # rtf/内存取该模型首个非空
-        for c in ("rtf", "cmm_mb", "os_mb"):
+        for c in FIELD_METRICS:
             if not rec[key].get(c) and r.get(c):
                 rec[key][c] = r[c]
+    for model, ds, m, old, new in shadowed:
+        print(f"  [info] {model}/{ds} 的 {m} 有多个口径：表格用最新值 {new}（旧值 {old} 仍保留在 CSV）")
     records = [rec[k] for k in order]
     has_multi_ds = len({d for _, d in order}) > 1
     extra = [c for c in ("rtf", "cmm_mb", "os_mb")
@@ -108,7 +135,9 @@ def pivot(module_rows):
 
 
 def _best_index(records, col, spec):
-    """该列最优行索引（≥2 行才返回，否则 None）。"""
+    """该列最优行索引（≥2 行才返回，否则 None）。非单调指标（lower_better=None）不标记。"""
+    if spec.lower_better is None:
+        return None
     vals = []
     for i, rc in enumerate(records):
         try:

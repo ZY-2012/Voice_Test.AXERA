@@ -51,6 +51,25 @@ def module_label(module, cfg=None):
 # host 与 板端 的同一挂载前缀（本地 ↔ AX 板端）
 _MOUNT_PAIRS = [("/data/shared/huyuan", "/root/huyuan/workspace")]
 
+# TTS 数据集 -> 语言（单一事实来源：synth_batch / eval_tts / run.sh 都从这里派生，
+# 避免"未列出即当英文"这类默认值 bug，如 zh_hardcase 被误判为 en）
+TTS_DATASETS = {"aishell3": "zh", "zh_hardcase": "zh", "zh_long": "zh",
+                "ljspeech": "en", "librispeech": "en"}
+
+# RTF 主口径的测量集：固定 shape 的 axmodel 每条推理耗时近似恒定，RTF 被音频长短主导
+# （AISHELL-3 均长仅约 1.3s，会让 RTF 虚高数倍，与各仓库用长句/段落报的官方值不可比）。
+# 故跨模型/对官方可比的 RTF 一律看 zh_long（长句集）这一行。
+RTF_REFERENCE_DATASET = "zh_long"
+
+
+def tts_lang(dataset):
+    """TTS 数据集的语言。未知数据集显式报错，不静默默认。"""
+    try:
+        return TTS_DATASETS[dataset]
+    except KeyError:
+        raise ValueError(
+            f"未知 TTS 数据集 {dataset!r}；请在 tools/common.py 的 TTS_DATASETS 登记语言")
+
 
 def _remap_path(pth):
     """若配置路径在本机不存在、但其挂载对端存在，则重映射（host↔board 透明切换）。"""

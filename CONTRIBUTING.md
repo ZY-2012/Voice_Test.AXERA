@@ -20,6 +20,7 @@ Voice_Test.AXERA 面向持续新增：**数据集、模型、测试标准**都�
 
 1. **SE/TTS**：`tools/model_registry.py` 加 builder 函数（返回 `(workdir, argv)`，签名 `def xxx(model_dir, chip, *args) -> tuple[Path, list[str]]`）+ `REGISTRY` 加条目（kind/sr/type/langs/builder/out_glob 等）。
    **ASR**：只需 config（见下），asr/run.sh 从 config 派生模型列表。
+   **VAD**：加 `vad/eval_<model>.py`（产出每帧语音概率 → `tools/metrics_vad.py` 聚合 → 追加 10 列 `vad.csv`），并在 `vad/run.sh` 里加一段分支；模型清单由 config `models.vad` 派生（`VAD_MODELS` 可覆盖）。若模型只有 C++ 可执行（如 tenvad），config 额外写 `code_dir:` 指向推理代码仓库，交叉编译脚本参考 `vad/build_tenvad.sh`。
 2. `configs/benchmark.yaml` 的 `models.<module>.<name>` 加 `{hf: AXERA-TECH/xxx, dir: 本地目录名}`。
 
 然后：`LIMIT=3 bash <module>/run.sh` 冒烟 → 全量 → `python tools/report.py --readme` 刷新并提交。

@@ -7,8 +7,23 @@ paths:
   data_root: /data/shared/huyuan/8860_datasets
   # 已适配模型根目录（axmodel + 各模型推理仓库）
   model_root: /data/shared/huyuan/8860_export
+  # 板端本地盘模型目录（可选，避免大模型每次从慢速 NFS 冷加载）。
+  # 支持 ~ 展开；若此目录下存在同名模型子目录（如 FireRedASR-AED/）则优先用本地盘副本。
+  # 留空 = 关闭。host 侧该路径不存在时自动回退 model_root，故两端可共用同一配置。
+  model_local_root: ~/asr_local
+  # 部分模型需专用 python 环境：填**环境名**（不要写绝对路径，路径由运行时的 conda
+  # 安装位置推导，故各人装在哪都能复现）。留空/删除该项 = 用当前环境。
+  #   zipvoice 英文的 G2P daemon 依赖 piper_phonemize，它只提供 cp39~cp312 的 wheel，
+  #   板端 base 若是 Python 3.13 则装不上，故英文需指向 Python≤3.12 的环境（中文不需要）。
+  #   建环境见 tts/README.md §3。
+  model_env:
+    zipvoice: ZipVoice
   # 结果输出目录（相对本仓库）
   results_dir: results
+  # AX650 BSP SDK（交叉编译板端 C++ 可执行用，如 TEN VAD）。需含
+  # include/ax_engine_api.h + lib/libax_{engine,interpreter,sys}.so；
+  # 也可用环境变量 AX650_SDK_ROOT 覆盖，或作为 build_tenvad.sh 的第一个参数传入。
+  ax650_sdk_root: /data/shared/huyuan/toolchains/ax650n_bsp_sdk/msp/out
 
 # ============ 下载 ============
 download:
@@ -19,7 +34,7 @@ download:
 # label 供 README/汇总标题用；scope 为口径标注模板（{...} 引用 subset 计数，report.py 填充）
 modules:
   asr: { label: 语音识别 ASR,   scope: "AISHELL-1 中文 {zh_per_set} 条 CER / ESB 英文各 {en_per_set} 条 WER · RTF 不含加载" }
-  vad: { label: 语音活动检测 VAD, scope: "逐句集各 {en_utts} 条 + Picovoice 长流 · 帧级指标" }
+  vad: { label: 语音活动检测 VAD, scope: "逐句集各 {en_utts} 条 + TEN VAD 官方 {tenvad_utts} 条 + Picovoice 长流 · 帧级指标" }
   se:  { label: 语音增强 SE,    scope: "VoiceBank-DEMAND {pairs} 对 · PESQ/STOI/SI-SNR · RTF 不含加载" }
   tts: { label: 语音合成 TTS,   scope: "AISHELL-3 中文 {zh_utts} 条回环 CER · RTF 不含加载" }
 
@@ -40,11 +55,15 @@ subset:
   vad:
     en_utts: 200          # LibriVAD/AISHELL 逐句集抽样条数
     picovoice_full: true  # Picovoice 长流是单条音频，不抽样
+    tenvad_utts: 30       # TEN VAD 官方测试集全量（共 30 条）
   se:
     pairs: 200            # VoiceBank-DEMAND 抽样对数
   tts:
     zh_utts: 200          # AISHELL-3 抽样条数
     en_utts: 200          # LJSpeech 抽样条数
+    en_librispeech: 200   # LibriSpeech test-clean 抽样条数（英文多说话人，复用 asr/librispeech）
+    zh_hardcase: 150      # 中文难例全量（绕口令/长句/数字/同音，见 tts/zh_hardcase.tsv）
+    zh_long: 40           # 长句集全量（= 难例集的 hard_long_*）；**RTF 主口径在此集上测**
 
 # ============ VAD 混噪参数（Picovoice 口径）============
 vad_mix:
@@ -65,6 +84,9 @@ models:
     wenet:       { hf: AXERA-TECH/wenet }
   vad:
     silero:      { hf: AXERA-TECH/silero-vad }
+    # TEN VAD：C++ 可执行（无 python 绑定）。dir=模型仓库（含 axmodel + 官方 testset），
+    # code_dir=推理代码仓库（github AXERA-TECH/ten-vad.axera），需先 bash vad/build_tenvad.sh 交叉编译
+    tenvad:      { hf: AXERA-TECH/ten-vad, dir: ten-vad, code_dir: ten-vad.axera }
   se:
     # 已适配（本地目录名见 tools/model_registry.py；命令模板亦在其中）
     gtcrn:        { hf: AXERA-TECH/gtcrn.axera,        dir: gtcrn.axera }
@@ -73,9 +95,10 @@ models:
     gcrn:          { hf: AXERA-TECH/GCRN,              dir: GCRN }                          # 16kHz
   tts:
     # 已适配（预设音色 kokoro/melotts；零样本 zipvoice/cosyvoice2）
-    kokoro:       { hf: AXERA-TECH/kokoro.axera,     dir: kokoro.axera }
+    # enabled: false = 默认不纳入 run.sh（仍可用 TTS_MODELS 显式指定）
+    kokoro:       { hf: AXERA-TECH/kokoro.axera,     dir: kokoro.axera, enabled: false }  # 中文合成偏短/截断，待修复
     melotts:      { hf: AXERA-TECH/MeloTTS,          dir: MeloTTS }
-    zipvoice:     { hf: AXERA-TECH/ZipVoice.AXERA,   dir: ZipVoice.AXERA }
+    zipvoice:     { hf: AXERA-TECH/ZipVoice.AXERA,   dir: ZipVoice.AXERA_HUG }  # distill 版 num_step=4；HF 副本较完整（cpp/ 由软链补，英文 G2P daemon 需要）
     cosyvoice2:   { hf: AXERA-TECH/Cosyvoice2.Axera, dir: CosyVoice2 }
 
 # ============ 评估口径 ============
@@ -90,5 +113,11 @@ eval:
   se:
     metrics: [pesq, stoi, si_snr]
   tts:
-    asr_model: sensevoice # 回环可懂度用哪个已适配 ASR
-    metrics: [cer_loopback, mcd, rtf]
+    # 分语言选评测 ASR：均用 firered —— GT 锚点实测它中英双优（ASR 地板最低，
+    # 回环值几乎等于纯 TTS 误差）。英文对比（librispeech 真人音频 20 条）：
+    # firered WER 3.03% vs sensevoice 5.84%
+    asr_model_zh: firered
+    asr_model_en: firered
+    asr_model: sensevoice   # 兼容旧脚本引用
+    metrics: [cer_loopback, wer_loopback, cer_gt, wer_gt,
+              sub_rate, del_rate, ins_rate, len_ratio, success_rate, rtf]

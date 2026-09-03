@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """SileroVAD 在 benchmark 子集上评测（板端）。
-  - LibriVAD/AISHELL 逐句集：audio_forward→每帧概率，与采样级标签(降到32ms帧)比，算 F1/AUC
-  - Picovoice 长流：整条 audio_forward，与 benchmark_labels.txt(32ms帧,1=未知忽略)比
+  - LibriVAD/AISHELL/TEN VAD 逐句集：流式 chunk→每帧概率，与采样级标签(降到32ms帧)比，算 F1/AUC
+  - Picovoice 长流：整条流式推理，与 benchmark_labels.txt(32ms帧,1=未知忽略)比
 输出行追加到 results/vad.csv。
-用法: python eval_silero.py --backend ax650 [--dataset librivad|aishell1|picovoice]
+用法: python eval_silero.py --backend ax650 [--dataset librivad|aishell1|tenvad|picovoice]
 """
 import argparse
 import sys
@@ -84,7 +84,8 @@ def main():
     cfg = load_config()
     ap = argparse.ArgumentParser()
     ap.add_argument("--backend", default="ax650")
-    ap.add_argument("--dataset", nargs="+", default=["librivad", "aishell1", "picovoice"])
+    ap.add_argument("--dataset", nargs="+",
+                    default=["librivad", "aishell1", "tenvad", "picovoice"])
     args = ap.parse_args()
     dr = Path(cfg["paths"]["data_root"]) / "benchmark" / "vad"
     csv = REPO / "results" / "vad.csv"

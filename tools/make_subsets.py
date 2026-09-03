@@ -76,11 +76,15 @@ def sub_asr(data_root, out_root, cfg, full):
 
 def sub_vad(data_root, out_root, cfg, full):
     seed = cfg["subset"]["seed"]
-    n = None if full else cfg["subset"]["vad"]["en_utts"]
-    for ds in ["librivad/test", "aishell1/test"]:
+    conf = cfg["subset"]["vad"]
+    # tenvad 官方集仅 30 条，独立计数（默认即全量）；其余逐句集用 en_utts
+    counts = {"librivad/test": conf["en_utts"], "aishell1/test": conf["en_utts"],
+              "tenvad/test": conf.get("tenvad_utts", 30)}
+    for ds in ["librivad/test", "aishell1/test", "tenvad/test"]:
         scp = Path(data_root) / "vad" / ds / "test.scp"
         if not scp.exists():
             continue
+        n = None if full else counts[ds]
         rows = _read_scp(scp)
         ids = deterministic_sample(sorted(rows), n, seed)
         out = Path(out_root) / "vad" / ds.split("/")[0]
@@ -119,20 +123,33 @@ def sub_se(data_root, out_root, cfg, full):
 def sub_tts(data_root, out_root, cfg, full):
     seed = cfg["subset"]["seed"]
     conf = cfg["subset"]["tts"]
-    for ds, key in [("ljspeech", "en_utts"), ("aishell3", "zh_utts")]:
+    for ds, key in [("ljspeech", "en_utts"), ("aishell3", "zh_utts"),
+                    ("librispeech", "en_librispeech"), ("zh_hardcase", "zh_hardcase"),
+                    ("zh_long", "zh_long")]:
         d = Path(data_root) / "tts" / ds
-        if not (d / "wav.scp").exists():
+        if not (d / "text").exists():
             continue
-        n = None if full else conf[key]
-        wavs, texts = _read_scp(d / "wav.scp"), _read_scp(d / "text")
-        ids = deterministic_sample(sorted(set(wavs) & set(texts)), n, seed)
+        n = None if full else conf.get(key)
+        texts = _read_scp(d / "text")
+        # zh_hardcase 无参考音频（纯文本难例集）：跳过 wav.scp，MCD/GT 锚点不适用
+        has_wav = (d / "wav.scp").exists()
+        wavs = _read_scp(d / "wav.scp") if has_wav else {}
+        ids = sorted(set(wavs) & set(texts)) if has_wav else sorted(texts)
+        ids = deterministic_sample(ids, n, seed)
         out = Path(out_root) / "tts" / ds
         out.mkdir(parents=True, exist_ok=True)
         (out / "text").write_text(
             "\n".join(f"{u}\t{texts[u][0]}" for u in ids) + "\n", encoding="utf-8")
-        (out / "wav.scp").write_text(
-            "\n".join(f"{u}\t{wavs[u][0]}" for u in ids) + "\n", encoding="utf-8")
-        print(f"  [tts] {ds}: {len(ids)} 条")
+        if has_wav:
+            (out / "wav.scp").write_text(
+                "\n".join(f"{u}\t{wavs[u][0]}" for u in ids) + "\n", encoding="utf-8")
+        # text.ref：CER 参考与 TTS 输入不同时（如难例集数字读法）需另存
+        if (d / "text.ref").exists():
+            refs = _read_scp(d / "text.ref")
+            (out / "text.ref").write_text(
+                "\n".join(f"{u}\t{refs[u][0]}" for u in ids if u in refs) + "\n",
+                encoding="utf-8")
+        print(f"  [tts] {ds}: {len(ids)} 条{'' if has_wav else '（无参考音频）'}")
 
 
 def main():

@@ -40,6 +40,8 @@ print('LibriVAD test-clean 对齐已解压')"
     [ -d "$DATA_ROOT/asr/librispeech/wav" ] && $PY "$REPO_DIR/vad/gen_librivad_test.py" || echo "  跳过 LibriVAD（需先制作 asr）"
     # Picovoice 长流（需 DEMAND 解压 + test-clean wav）
     [ -d "$DATA_ROOT/vad/demand/extracted" ] && $PY "$REPO_DIR/vad/gen_picovoice_test.py" || echo "  跳过 Picovoice（需 DEMAND）"
+    # TEN VAD 官方 30 条测试集（随模型仓库发布：scv 段标注 → 采样级 npy；无源自动跳过）
+    $PY "$REPO_DIR/vad/gen_tenvad_test.py"
     # 中文 VAD 标签（funasr，GPU 快；无 GPU 可加 --device cpu 但很慢）
     if [ -d "$DATA_ROOT/asr/aishell1/wav" ]; then
         $PY "$REPO_DIR/vad/gen_aishell_vad_labels.py" --split test --device "${VAD_DEVICE:-cuda:0}" || \

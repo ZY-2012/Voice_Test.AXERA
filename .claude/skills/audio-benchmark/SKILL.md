@@ -59,6 +59,17 @@ bash run_benchmark.sh       # ⑤ 板端跑分 → results/*.csv（末尾自动�
 10. pkill 大批进程后 NPU 可能瞬时异常（AX_ENGINE_CreateHandle failed），重试一次通常恢复
 11. **results/ 与 tools/ 属主**：板端 root 跑完会写 root 属主文件，host 端再跑脚本可能 PermissionError——板端 `chown -R 1055:1001 <repo>/results <repo>/tools` 一次恢复；`__pycache__` 同理（勿在 NFS 上混用两端 python）
 12. **README 注入标记**：只写开始标记不写结束标记时 report.py 会告警跳过（`<!-- RESULTS:x --><!-- /RESULTS:x -->` 连写即可）
+13. **scp/清单里的绝对路径必须过 `common.remap()`**：`wav.scp` 等清单是 host 侧制作的，存的是 `/data/shared/huyuan/...`；板端该前缀是浅目录，**直接解析 0/200**，经 remap 后 200/200。凡是读清单里路径再 `open`/`exists` 的新代码都要先 remap（TTS 的 GT 锚点与 len_ratio 曾因此静默失效）
+14. **大模型走板端本地盘**：config `paths.model_local_root`（`~/asr_local`，支持 ~ 展开），存在同名子目录即优先使用。firered axmodel 1.3GB + NFS 约 2.7MB/s ⇒ 冷加载数分钟。板端本地盘余量紧张（57G 已用 91%，剩约 4G），拷前先 `df -h /`
+15. **幂等跳过时别写 RTF**：合成全部命中已存在会得到 `infer_s=0` → `RTF=0`，写入 CSV 会污染已有指标。`synth_batch.py` 用 `n_new` 计数判断，run.sh 对空/0/nan 拒写
+16. **vendor `test_wer.py` 处理不了英文**：`audio_path, gt = line.split(" ")` 无 maxsplit，英文转写含空格必崩；且其 "WER" 是对字符串算编辑距离（英文实为 CER）。TTS 已改为「`asr_transcribe.py` 只出转写 + `tools/metrics_asr.py` 统一算分」，勿再退回抓 vendor log
+17. **ZipVoice 两份副本各缺一半**：`ZipVoice.AXERA`(ModelScope) 有 `cpp/` 但 bin/resources 空；`ZipVoice.AXERA_HUG`(HF) 齐全但无 `cpp/`。现 config 指向 `_HUG`，并把 `cpp` 软链到 MS 副本；HF 的 `bin/*` 下载后**无执行权限**，需 `chmod +x`
+18. **ZipVoice 英文需专用 python 环境**：`cpp/scripts/py_daemon.py`（英文 G2P daemon）依赖 `piper_phonemize`，它只出 cp39~cp312 wheel，板端 base 是 3.13 装不上。板端已有 `ZipVoice` env（3.10，含该包）；config `paths.model_env.zipvoice` 填**环境名**即可（路径由运行时 conda 位置推导，勿写绝对路径）。原理：二进制用 `execlp("python3")` 走 PATH，故 synth_batch 前置该 env 的 bin/ 到子进程 PATH。中文走 pypinyin 查表不受影响
+19. **melotts 的 `melotts_batch.py` 必须先 chdir 到 MeloTTS/python**：vendor 用相对路径加载 BERT（`model_id='bert-base-multilingual-uncased'` 是同目录下的文件夹）。`synth_batch` 走子进程 `cwd=MODEL_DIR` 所以无此问题
+20. **melotts 英文需 NLTK 数据**（`averaged_perceptron_tagger_eng` + `cmudict`，g2p_en 词性标注用）。板端直连 nltk 服务器会挂住并留下 `*.zip.lock`（残留锁阻塞重试，需先删）。**不用往板端拷**：数据放共享盘 `model_root/_nltk_data`（host 侧 `nltk.download(..., download_dir=...)` 下一次），代码自动注入 `NLTK_DATA`
+21. **NPU 偶发 `Failed to initialize ax sys engine.`**：与坑 10 同源，重试即恢复；曾导致 melotts 英文与 GT 锚点整段静默失败，排查时先重试再怀疑代码
+22. **C++ demo 的临时输出别落 NFS**：TEN VAD 的 `ten_vad_example` 必须写一路立体声 wav（逐样本 fwrite）。放共享盘时 200 条 librivad 跑 30 分钟还没完（子进程长期 D 状态），换本机盘 `~/.tenvad_scratch` 后约 17 分钟。凡 vendor 可执行强制写输出的，一律指到本机盘
+23. **子进程峰值内存读 `/proc/<pid>/status` 的 `VmHWM`**：`resource.getrusage(RUSAGE_CHILDREN).ru_maxrss` 是"历来所有已回收子进程的最大值"，单调不减且混入 python 自身 fork 开销（实测 11.8MB vs 真实 4.0MB）；轮询 `VmRSS` 又会漏掉瞬时峰值，`VmHWM` 是内核维护的峰值，随时读都准
 
 ## 常见任务 SOP
 

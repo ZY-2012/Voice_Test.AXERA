@@ -69,30 +69,66 @@ _ZIPVOICE_PROMPT = {
     "en": ("assets/moss_prompts/en_4_4p5s.wav", "This is almost twice the current industry production level per train."),
 }
 _ZIPVOICE_BIN = {"ax650": "bin/zipvoice_ax650", "ax630c": "bin/zipvoice_ax630c"}
+# distill 版（4 步采样）；按芯片选目录，勿硬编码——否则 ax630c 会误用 ax650 模型
+_ZIPVOICE_MODEL = {"ax650": "models/zipvoice_distill_ax650",
+                   "ax630c": "models/zipvoice_distill_ax630C",
+                   "ax620q": "models/zipvoice_distill_ax630C"}
+# Python 入口的 --model-name（choices 见 infer_zipvoice_axera.py）
+_ZIPVOICE_PYMODEL = {"ax650": "zipvoice_distill_ax650",
+                     "ax630c": "zipvoice_distill_ax630C",
+                     "ax620q": "zipvoice_distill_ax630C"}
 
 
 def tts_zipvoice(model_dir, chip, lang, text, outp):
+    """中文用 C++ 内置 tokenizer；英文必须走 Python daemon（且**不能传 --token-file**）。
+
+    zipvoice.cpp 的 tokenizer 分支是**互斥且有优先级**的：
+        if (!cat_tokens_file.empty()) ... else if (tokenizer.IsLoaded()) ... else if (!repo_dir.empty()) ...
+    只要 `--token-file` 加载成功就短路走 C++ 内置实现，`--repo-dir` 的 Python daemon 分支
+    永远进不去。而 C++ 内置的英文只是 `tokenizer.cpp` 里自述的
+    "Simplified English tokenization: character-by-character phoneme mapping" ——
+    实测英文回环 WER 95.7%（转写呈"音素沾边但整体错乱"，如 PASTEBOARD→PASTEBARD）。
+    官方 run_ax650.sh 英文同时传两个参数，故其英文路径同样落到简化实现；这也解释了
+    README 为何只演示 Python 入口 `infer_zipvoice_axera.py`。
+    ⇒ 英文只传 --repo-dir，强制走 daemon（daemon 内用 piper_phonemize 做 espeak G2P）。
+
+    英文另需两项前置（见 tts/README.md §3.1/§3.2）：
+      1. `cpp/scripts/py_daemon.py` 必须在位（不在默认分发文件列表里）
+      2. daemon 依赖 `piper_phonemize`（只出 cp39~cp312 wheel），需 config
+         `paths.model_env.zipvoice` 指向 Python≤3.12 的环境；否则 daemon 起不来，
+         二进制会**静默降级**到简化 tokenizer（不报错，只是质量崩）。
+    中文走 pinyin_table.hpp 查表（编译期烘入），不需要 daemon 与该依赖。
+    """
     pwav, ptext = _ZIPVOICE_PROMPT.get(lang, _ZIPVOICE_PROMPT["en"])
     bin_ = _ZIPVOICE_BIN.get(chip, "bin/zipvoice_ax650")
-    repo = [] if lang == "zh" else ["--repo-dir", "."]
-    return str(model_dir), [bin_, "--model-dir", "models/zipvoice_distill_ax650",
-            "--token-file", "resources/zipvoice_hf/zipvoice/tokens.txt",
+    mdl = _ZIPVOICE_MODEL.get(chip, _ZIPVOICE_MODEL["ax650"])
+    argv = [bin_, "--model-dir", mdl,
             "--prompt-wav", pwav, "--prompt-text", ptext, "--text", text,
             "--vocoder-model", "models/vocoder/vocos_full.axmodel",
-            "--output-wav", str(outp), "--seed", "42"] + repo
+            "--output-wav", str(outp), "--seed", "42"]
+    if lang == "zh":
+        argv += ["--token-file", "resources/zipvoice_hf/zipvoice/tokens.txt"]
+    else:
+        # 不传 --token-file，否则 C++ tokenizer 会短路掉 daemon（见 docstring）
+        argv += ["--repo-dir", "."]
+    return str(model_dir), argv
 
 
 def tts_cosyvoice2(model_dir, chip, lang, text, outp):
     # C++ LLM 二进制，需 tokenizer server(127.0.0.1:12345) + prompt_files；逐条重载，较重
     # 板端建议拷贝到本地盘运行（NFS 读仅 2.7MB/s 会拖慢 embed 加载）：
     #   COSYVOICE2_DIR=/root/cosyvoice2_local bash tts/run.sh
+    # n_timesteps: flow-matching 去噪步数。vendor 各 run 脚本一律用 1（最快/最低保真），
+    # 实测 1 步时有内容截断（del_rate 高、len_ratio<1）。可用环境变量调大做质量/速度权衡：
+    #   COSYVOICE2_TIMESTEPS=4 bash tts/run.sh
     import os
     local = os.environ.get("COSYVOICE2_DIR")
     if local and Path(local).exists():
         model_dir = Path(local)
+    nts = os.environ.get("COSYVOICE2_TIMESTEPS", "1")
     return str(model_dir), ["./main_ax650",
             "--template_filename_axmodel", "CosyVoice-BlankEN-Ax650-prefill_512/qwen2_p128_l%d_together.axmodel",
-            "--token2wav_axmodel_dir", "token2wav-axmodels/", "--n_timesteps", "1",
+            "--token2wav_axmodel_dir", "token2wav-axmodels/", "--n_timesteps", nts,
             "--axmodel_num", "24", "--bos", "0", "--eos", "0",
             "--filename_tokenizer_model", "http://127.0.0.1:12345",
             "--filename_post_axmodel", "CosyVoice-BlankEN-Ax650-prefill_512/qwen2_post.axmodel",
@@ -105,6 +141,12 @@ def tts_cosyvoice2(model_dir, chip, lang, text, outp):
 
 
 # name -> {kind, sr, type, langs, out_glob(可选), builder}
+#
+# RTF 口径（主指标必须**不含模型加载**，见 README）。逐条起子进程的墙钟时间每条都含加载，
+# 不可用作主 RTF。各模型的纯推理耗时来源：
+#   rtf_pure_re: 二进制自报计时的正则（对 _run.log 全文匹配，各组求和 = 单条纯推理秒数）
+#   batch_driver: 改用"载入一次 + warmup"的批量驱动脚本（python 模型用）
+#   两者皆无 -> 该模型拿不到纯 RTF，只写 rtf_e2e（含加载）并在 note 标注
 REGISTRY = {
     # SE
     "gtcrn":        {"kind": "se", "sr": 16000, "builder": se_gtcrn},
@@ -113,8 +155,18 @@ REGISTRY = {
     "gcrn":        {"kind": "se", "sr": 16000, "builder": se_gcrn},
     # TTS
     "kokoro":       {"kind": "tts", "sr": 24000, "type": "preset",   "langs": ["zh", "en"], "builder": tts_kokoro},
-    "melotts":      {"kind": "tts", "sr": 44100, "type": "preset",   "langs": ["zh", "en"], "builder": tts_melotts},
-    "zipvoice":     {"kind": "tts", "sr": 24000, "type": "zeroshot", "langs": ["zh", "en"], "builder": tts_zipvoice},
+    "melotts":      {"kind": "tts", "sr": 44100, "type": "preset",   "langs": ["zh", "en"], "builder": tts_melotts,
+                     # 载入一次 + warmup 1 条，只计推理（纯 RTF 的正确来源）
+                     "batch_driver": "melotts_batch.py"},
+    "zipvoice":     {"kind": "tts", "sr": 24000, "type": "zeroshot", "langs": ["zh", "en"], "builder": tts_zipvoice,
+                     # 英文需专用 python 环境（Python≤3.12 + piper_phonemize），路径各人不同，
+                     # 配在 configs/benchmark.yaml 的 paths.model_env_bin.zipvoice，代码不写死。
+                     # 中文(C++)自报 `NPU total` + `Vocoder total`，英文路径同样走 C++ 计时，
+                     # 均已排除模型加载。
+                     "rtf_pure_re": [r"NPU total:\s*([\d.]+)\s*s",
+                                     r"Vocoder total:\s*([\d.]+)\s*s",
+                                     r"推理耗时:\s*([\d.]+)s"]},
     "cosyvoice2":   {"kind": "tts", "sr": 24000, "type": "cpp",      "langs": ["zh", "en"], "builder": tts_cosyvoice2,
                      "out_glob": "output*.wav", "heavy": True},
+                     # main_ax650 只打印 decode tokens，不自报耗时 -> 无纯 RTF（仅 rtf_e2e）
 }

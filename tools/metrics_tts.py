@@ -16,14 +16,25 @@ from metrics_asr import score as asr_score, load_text
 
 
 def mcd(ref_wav, syn_wav, sr=16000, n_mfcc=13):
-    """Mel-Cepstral Distortion（dB），DTW 对齐。需要 librosa。"""
+    """Mel-Cepstral Distortion（dB），DTW 对齐。需要 librosa。
+
+    量纲说明（易错）：标准 MCD = (10/ln10)·√2·‖c_ref − c_syn‖，其中 c 为**自然对数**倒谱。
+    librosa.feature.mfcc 内部用 power_to_db（10·log10），即已含 10/ln10 因子：
+        librosa_mfcc = (10/ln10) · 自然对数倒谱
+    故用 librosa MFCC 时正确系数为 **√2**，若再乘 10/ln10 会放大约 4.34 倍。
+
+    ⚠️ 即便量纲正确，本实现与文献 MCD（SPTK/WORLD mgc，n_mels 24~40）仍不可直接比较：
+    librosa 默认 n_mels=128 且 DCT norm='ortho'。且 MCD **仅同说话人有意义** ——
+    预设音色模型（kokoro/melotts）与参考说话人不同，跨说话人数值无解释力。
+    故默认不写入 CSV，仅作同说话人零样本克隆的辅助诊断。
+    """
     import librosa
     r, _ = librosa.load(ref_wav, sr=sr)
     s, _ = librosa.load(syn_wav, sr=sr)
     mr = librosa.feature.mfcc(y=r, sr=sr, n_mfcc=n_mfcc).T[:, 1:]  # 去能量维
     ms = librosa.feature.mfcc(y=s, sr=sr, n_mfcc=n_mfcc).T[:, 1:]
     D, wp = librosa.sequence.dtw(mr.T, ms.T, metric="euclidean")
-    k = 10.0 / np.log(10) * np.sqrt(2)
+    k = np.sqrt(2)   # librosa MFCC 已是 dB 量纲，不再乘 10/ln10
     dists = [np.sqrt(((mr[i] - ms[j]) ** 2).sum()) for i, j in wp]
     return float(k * np.mean(dists))
 
