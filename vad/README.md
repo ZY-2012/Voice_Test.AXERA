@@ -9,13 +9,13 @@
 | picovoice | 32ms 帧三值(0静音/1未知忽略/2语音) | 2620 句拼接长流 + DEMAND 0dB 混噪 | en |
 | librivad | 采样级二值(0/1)，强制对齐 TextGrid 导出 | 2620 条 | en |
 | aishell1 | 采样级二值(0/1)，funasr fsmn-vad 生成 | 7176 条 | zh |
-| tenvad | 采样级二值(0/1)，TEN VAD 官方 scv 段标注转换 | 30 条 / 4.4min | en |
+| ten_official | 采样级二值(0/1)，TEN VAD 官方 scv 段标注转换 | 30 条 / 4.4min | en |
 
 ## 2. 制作
 
 `gen_picovoice_test.py`（官方 mixer.py 逻辑）、`gen_librivad_test.py`（官方 create_labels.py 逻辑）、
 `gen_aishell_vad_labels.py`（funasr）、`gen_tenvad_test.py`（TEN VAD 模型仓库自带 testset 的 scv→npy）。
-子集：`tools/make_subsets.py` → `benchmark/vad/*/subset.scp`（picovoice 长流不抽，tenvad 仅 30 条即全量）。
+子集：`tools/make_subsets.py` → `benchmark/vad/*/subset.scp`（picovoice 长流不抽，ten_official 仅 30 条即全量）。
 
 ## 3. 测试命令（板端 base 环境）
 
@@ -30,7 +30,7 @@ PICO_SEC=600 python vad/eval_silero.py ...        # picovoice 长流截取前 N 
 
 # TEN VAD（先在 host 端交叉编译一次；需 AX650 BSP SDK + gcc-aarch64-linux-gnu）
 bash vad/build_tenvad.sh [/path/to/ax650n_bsp_sdk/msp/out]
-python vad/eval_tenvad.py [--dataset tenvad librivad aishell1 picovoice]
+python vad/eval_tenvad.py [--dataset ten_official librivad aishell1 picovoice]
 ```
 
 SileroVAD 用**流式 chunk API**（`model(chunk,sr)` 每 512 采样=32ms 出一帧概率），贴近真实流式 VAD，
@@ -42,6 +42,13 @@ SileroVAD 用**流式 chunk API**（`model(chunk,sr)` 每 512 采样=32ms 出一
 - 帧级 accuracy/precision/recall/F1 + ROC-AUC（`tools/metrics_vad.py`）；picovoice 的"未知"帧(标签1)不计
 - **RTF = 推理时间/音频时长，不含模型加载**（silero 载入一次只计 `_frame_probs`；TEN VAD 取
   可执行内部计时，其起点在 `ten_vad_create` 之后，与本工程口径一致）
+- **CMM = NPU 内存「峰值 − 基线」增量**（`tools/common.CmmDelta`）。`/proc/ax_proc/mem_cmm_info`
+  的 `used=` 是**全板**共享计数（vo_vfb/vdec 等底噪本板约 276MB），绝对值无法归因到模型，
+  只有增量有意义。基线须在建 handle / fork 子进程**之前**取
+- **OS(MB) 两个模型不可直接比**：silero 是 python 进程 RSS（含 numpy/axengine 运行时，约 45MB），
+  TEN VAD 是 C++ 子进程 `VmHWM`（约 4MB）——差值主要是 python 运行时，不是模型。
+  跨模型看内存请看 CMM 列。silero 的 RSS 在「载入后、推理前」定格，否则会量进本脚本
+  为算 AUC 累积的 probs/labels 数组（实测 45→238MB）
 - 帧长随模型：silero 32ms、TEN VAD 16ms（帧级 P/R/F1 对帧长不敏感，CSV note 列记录实际值）；
   picovoice 参考标签固定 32ms 栅格，TEN VAD 的 16ms 概率按 `prob_to_frames` 重采样对齐
 

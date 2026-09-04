@@ -77,10 +77,10 @@ def sub_asr(data_root, out_root, cfg, full):
 def sub_vad(data_root, out_root, cfg, full):
     seed = cfg["subset"]["seed"]
     conf = cfg["subset"]["vad"]
-    # tenvad 官方集仅 30 条，独立计数（默认即全量）；其余逐句集用 en_utts
+    # ten_official（TEN VAD 官方集）仅 30 条，独立计数（默认即全量）；其余逐句集用 en_utts
     counts = {"librivad/test": conf["en_utts"], "aishell1/test": conf["en_utts"],
-              "tenvad/test": conf.get("tenvad_utts", 30)}
-    for ds in ["librivad/test", "aishell1/test", "tenvad/test"]:
+              "ten_official/test": conf.get("ten_official_utts", 30)}
+    for ds in ["librivad/test", "aishell1/test", "ten_official/test"]:
         scp = Path(data_root) / "vad" / ds / "test.scp"
         if not scp.exists():
             continue

@@ -3,6 +3,7 @@
 所有模块脚本共用，口径与 8860_export 的 asr-vad-summary skill 一致。"""
 import hashlib
 import os
+import re
 import time
 from pathlib import Path
 
@@ -181,20 +182,75 @@ def deterministic_sample(items, n, seed):
 
 # ---------------- 板端资源测量 ----------------
 
+_CMM_PROC = "/proc/ax_proc/mem_cmm_info"
+_CMM_USED_RE = re.compile(r"used=(\d+)KB")
+
+
 def read_cmm_mb():
-    """AX 板端 NPU CMM 当前占用（MB）。非板端返回 None。"""
-    p = "/proc/ax_proc/mem_cmm_info"
-    if not os.path.exists(p):
+    """AX 板端**全系统** CMM 已用量（MB）。非板端返回 None。
+    取末尾 `---CMM_USE_INFO: ... used=<N>KB` —— 这是唯一的总量字段；
+    上方 `nBlock(... Cur=41 ...)` 是块计数不是字节数（旧实现误取该行且
+    `Cur=41` 这种带等号的 token 过不了 isdigit()，故一直静默返回 None）。
+    注意这是全板占用（vo_vfb/vdec 等底噪约 276MB），单模型指标须用
+    CmmDelta 取增量。"""
+    if not os.path.exists(_CMM_PROC):
         return None
     try:
-        for line in open(p):
-            if "Cur" in line:
-                for tok in line.replace(",", " ").split():
-                    if tok.isdigit():
-                        return int(tok) / 1024 / 1024
-    except Exception:
+        with open(_CMM_PROC) as f:
+            for line in f:
+                m = _CMM_USED_RE.search(line)
+                if m:
+                    return int(m.group(1)) / 1024
+    except OSError:
         return None
     return None
+
+
+class CmmDelta:
+    """模型占用的 NPU CMM = 运行期峰值 − 起始基线（MB）。
+
+    CMM 是全板共享计数，绝对值被其它子系统底噪主导，只有增量能归因到模型。
+    用法：`probe = CmmDelta()` 取基线 → 期间反复 `probe.sample()`（或起
+    `start()` 后台轮询）→ `probe.delta` 读结果。非板端 delta 为 None。
+    """
+
+    def __init__(self, interval=0.01):
+        self.interval = interval
+        self.baseline = read_cmm_mb()
+        self.peak = self.baseline
+        self._thread = None
+        self._stop_evt = None
+
+    def sample(self):
+        v = read_cmm_mb()
+        if v is not None and (self.peak is None or v > self.peak):
+            self.peak = v
+
+    @property
+    def delta(self):
+        if self.baseline is None or self.peak is None:
+            return None
+        return max(0.0, self.peak - self.baseline)
+
+    def start(self):
+        """后台轮询（子进程推理时用，主线程拿不到时机）。"""
+        import threading
+        self._stop_evt = threading.Event()
+
+        def _loop():
+            while not self._stop_evt.is_set():
+                self.sample()
+                time.sleep(self.interval)
+
+        self._thread = threading.Thread(target=_loop, daemon=True)
+        self._thread.start()
+        return self
+
+    def stop(self):
+        if self._stop_evt is not None:
+            self._stop_evt.set()
+            self._thread.join(timeout=1)
+        return self.delta
 
 
 def read_rss_mb():

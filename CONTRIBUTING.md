@@ -5,10 +5,11 @@ Voice_Test.AXERA 面向持续新增：**数据集、模型、测试标准**都�
 ## 核心约定（先读）
 
 1. **指标唯一事实来源 = `results/*.csv`**（10 列表头：`module,model,dataset,lang,metric,value,rtf,cmm_mb,os_mb,note`）。改指标 = 改 CSV → 跑 `python tools/report.py --readme` 刷新顶层 README 与 `results/summary.md`。**任何文档不手写指标数字**。
-2. **RTF 口径** = 推理时间 / 音频时长，**不含模型加载/初始化**。C++ 可执行优先；python 用"载入一次 + warmup 1 条 + 计时 N 条"探针。
-3. 顶层 README 的指标表位于 `<!-- RESULTS:<module> -->…<!-- /RESULTS:<module> -->` 标记区块内，由 report.py 生成，勿手改。
-4. 模块 README 统一 6 节骨架：1 数据集 / 2 制作 / 3 测试命令 / 4 指标口径 / 5 实测结果（指向自动表）/ 6 备注。
-5. 所有路径相对数据根目录/仓库根；数据根目录由 `configs/benchmark.yaml` 的 `paths.data_root` 配置。
+2. **RTF 口径** = 推理时间 / 音频时长，**不含模型加载/初始化**。C++ 可执行优先；python 用"载入一次 + warmup 1 条 + 计时 N 条"探针。⚠️ 别在计时期间起后台采样线程（抢 GIL，实测 RTF 虚高 5%）。
+3. **内存口径**：`cmm_mb` = NPU 内存**增量**（峰值 − 基线，`tools/common.CmmDelta`）——`/proc/ax_proc/mem_cmm_info` 的 `used=` 是全板共享计数，绝对值是别的子系统底噪；`os_mb` = 承载推理那个进程的 RSS，**跨语言不可比**（python 进程含 numpy/axengine 运行时，C++ 可执行只有几 MB），且要在「载入后、推理前」定格，否则量进评测脚本自己累积的数组。
+4. 顶层 README 的指标表位于 `<!-- RESULTS:<module> -->…<!-- /RESULTS:<module> -->` 标记区块内，由 report.py 生成，勿手改。
+5. 模块 README 统一 6 节骨架：1 数据集 / 2 制作 / 3 测试命令 / 4 指标口径 / 5 实测结果（指向自动表）/ 6 备注。
+6. 所有路径相对数据根目录/仓库根；数据根目录由 `configs/benchmark.yaml` 的 `paths.data_root` 配置。
 
 ## 新增数据集（3 步）
 

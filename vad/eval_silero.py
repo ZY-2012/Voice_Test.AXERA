@@ -3,7 +3,7 @@
   - LibriVAD/AISHELL/TEN VAD 逐句集：流式 chunk→每帧概率，与采样级标签(降到32ms帧)比，算 F1/AUC
   - Picovoice 长流：整条流式推理，与 benchmark_labels.txt(32ms帧,1=未知忽略)比
 输出行追加到 results/vad.csv。
-用法: python eval_silero.py --backend ax650 [--dataset librivad|aishell1|tenvad|picovoice]
+用法: python eval_silero.py --backend ax650 [--dataset librivad|aishell1|ten_official|picovoice]
 """
 import argparse
 import sys
@@ -14,7 +14,7 @@ import numpy as np
 
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "tools"))
-from common import load_config, read_cmm_mb, read_rss_mb, remap
+from common import load_config, CmmDelta, read_rss_mb, remap
 import metrics_vad as V
 
 
@@ -85,7 +85,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--backend", default="ax650")
     ap.add_argument("--dataset", nargs="+",
-                    default=["librivad", "aishell1", "tenvad", "picovoice"])
+                    default=["librivad", "aishell1", "ten_official", "picovoice"])
     args = ap.parse_args()
     dr = Path(cfg["paths"]["data_root"]) / "benchmark" / "vad"
     csv = REPO / "results" / "vad.csv"
@@ -93,18 +93,26 @@ def main():
     if not csv.exists():
         csv.write_text("module,model,dataset,lang,metric,value,rtf,cmm_mb,os_mb,note\n")
 
+    # CMM/RSS 都在「载入模型后、推理前」定格：
+    #  - CMM 基线须在 load 之前取（axengine 建 handle 时才分配 NPU 内存），之后一次采样即可
+    #    ——CMM 分配完就不变，不需要后台轮询；轮询线程抢 GIL 会让 RTF 虚高约 5%
+    #  - RSS 同样只取此刻，否则会量进本脚本为算 AUC 累积的 probs/labels 数组（实测 45→238MB），
+    #    那不是模型占用
+    cmm_probe = CmmDelta()
     from silero_vad_axera import load_silero_vad
     model = load_silero_vad(args.backend)
-    cmm, osm = read_cmm_mb(), read_rss_mb()
+    cmm_probe.sample()
+    cmm, osm = cmm_probe.delta, read_rss_mb()
 
     def rec(ds, res):
         lang = "zh" if ds == "aishell1" else "en"
         with open(csv, "a") as f:
             for m in ["f1", "accuracy", "precision", "recall", "roc_auc"]:
                 f.write(f"vad,silero,{ds},{lang},{m},{res[m]:.4f},{res.get('rtf',''):.4f},"
-                        f"{cmm or ''},{osm or ''},board\n")
+                        f"{'' if cmm is None else f'{cmm:.1f}'},{osm or ''},board frame=32ms\n")
         print(f"  [{ds}] F1={res['f1']:.3f} AUC={res['roc_auc']:.3f} "
-              f"acc={res['accuracy']:.3f} RTF={res.get('rtf',float('nan')):.4f}")
+              f"acc={res['accuracy']:.3f} RTF={res.get('rtf',float('nan')):.4f} "
+              f"CMM={'—' if cmm is None else f'{cmm:.1f}'}MB")
 
     for ds in args.dataset:
         if ds == "picovoice":

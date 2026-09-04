@@ -70,6 +70,9 @@ bash run_benchmark.sh       # ⑤ 板端跑分 → results/*.csv（末尾自动�
 21. **NPU 偶发 `Failed to initialize ax sys engine.`**：与坑 10 同源，重试即恢复；曾导致 melotts 英文与 GT 锚点整段静默失败，排查时先重试再怀疑代码
 22. **C++ demo 的临时输出别落 NFS**：TEN VAD 的 `ten_vad_example` 必须写一路立体声 wav（逐样本 fwrite）。放共享盘时 200 条 librivad 跑 30 分钟还没完（子进程长期 D 状态），换本机盘 `~/.tenvad_scratch` 后约 17 分钟。凡 vendor 可执行强制写输出的，一律指到本机盘
 23. **子进程峰值内存读 `/proc/<pid>/status` 的 `VmHWM`**：`resource.getrusage(RUSAGE_CHILDREN).ru_maxrss` 是"历来所有已回收子进程的最大值"，单调不减且混入 python 自身 fork 开销（实测 11.8MB vs 真实 4.0MB）；轮询 `VmRSS` 又会漏掉瞬时峰值，`VmHWM` 是内核维护的峰值，随时读都准
+24. **CMM 一直是空的（已修）**：旧 `read_cmm_mb()` 取含 `Cur` 的行再找纯数字 token，但 `nBlock(Max=95, Cur=41, ...)` 切出来是 `Cur=41` 这种带等号的串，`isdigit()` 永远 False → 静默返回 None。正确字段是末尾 `---CMM_USE_INFO: ... used=<N>KB`。且它是**全板**共享计数（本板底噪约 276MB），单模型必须用 `common.CmmDelta` 的「峰值−基线」增量，基线要在建 handle / fork 之前取。实测 silero 0.9MB、TEN VAD 0.5MB
+25. **计时期间别起后台采样线程**：给 silero 加 CMM 轮询（10ms 一次读 /proc）后 RTF 从 0.0292 涨到 0.0309（抢 GIL）。CMM 建 handle 时一次分配、之后不变，载入后单次采样即可
+26. **`os_mb` 要在「载入后、推理前」定格**：放到 rec() 里会量进评测脚本为算 AUC 累积的 probs/labels（silero 实测 45→238MB）。且 python 进程 RSS 与 C++ 可执行 RSS **跨语言不可比**（差值是 python 运行时），跨模型比内存看 CMM 列
 
 ## 常见任务 SOP
 

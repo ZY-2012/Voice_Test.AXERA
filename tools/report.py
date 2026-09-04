@@ -59,7 +59,7 @@ METRIC_FORMATS = {
     "mcd":           Fmt("MCD", 2, " dB", True),
     "rtf":           Fmt("RTF", 3, "", True),      # 独立列（不在 metric 中）
     "rtf_e2e":       Fmt("RTF(含加载)", 2, "", True),  # synth_batch 逐条子进程口径，与 RTF 主口径不可混比
-    "cmm_mb":        Fmt("CMM(MB)", -1, "", True),
+    "cmm_mb":        Fmt("CMM(MB)", 1, "", True),   # 常在 1MB 以下，取整会全变 0/1
     "os_mb":         Fmt("OS(MB)", -1, "", True),
 }
 _DEFAULT_FMT = Fmt("", 3, "", False)
@@ -109,6 +109,7 @@ def pivot(module_rows):
         key = (r["model"], r["dataset"])
         if key not in rec:
             rec[key] = {"model": r["model"], "dataset": r["dataset"],
+                        "lang": r.get("lang", ""),
                         "rtf": r.get("rtf", ""), "cmm_mb": r.get("cmm_mb", ""),
                         "os_mb": r.get("os_mb", ""), "note": r.get("note", "")}
             order.append(key)
@@ -149,50 +150,132 @@ def _best_index(records, col, spec):
     return (min if spec.lower_better else max)(vals, key=lambda t: t[1])[0]
 
 
+def _sort_by_primary(records, prim, specs, metric_cols):
+    """按主指标排序（缺值排末尾）。"""
+    if prim not in metric_cols:
+        return records
+    ps = specs[prim]
+
+    def _k(rc):
+        try:
+            return (0, float(rc.get(prim, "")) * (1 if ps.lower_better else -1))
+        except (TypeError, ValueError):
+            return (1, 0.0)
+
+    return sorted(records, key=_k)
+
+
+def _md_table(head, rows):
+    return ["| " + " | ".join(head) + " |",
+            "|" + "|".join(["---"] * len(head)) + "|"] + \
+           ["| " + " | ".join(r) + " |" for r in rows]
+
+
+def _render_rows(records, cols, specs):
+    """一行一模型的表；每列最优加粗——只在本表（同一数据集）内比较。"""
+    best = {c: _best_index(records, c, specs[c]) for c in cols}
+    rows = []
+    for i, rc in enumerate(records):
+        cells = [rc["model"]]
+        for c in cols:
+            txt = fmt_value(rc.get(c, ""), specs[c])
+            if best[c] == i and txt != "—":
+                txt = f"**{txt}**"
+            cells.append(txt)
+        rows.append(cells)
+    return _md_table(["模型"] + [specs[c].label or c for c in cols], rows), best
+
+
+def _primary_matrix(records, datasets, prim, spec):
+    """主指标矩阵：行=模型，列=数据集。同一列即同一数据集，纵向直接比模型。
+    整行/整列没有主指标值的都不进表（如英文集只有 WER 没有 CER）。"""
+    cell = {(rc["model"], rc["dataset"]): rc.get(prim, "") for rc in records}
+
+    def _num(m, ds):
+        try:
+            return float(cell.get((m, ds), ""))
+        except (TypeError, ValueError):
+            return None
+
+    all_models = []
+    for rc in records:
+        if rc["model"] not in all_models:
+            all_models.append(rc["model"])
+    datasets = [ds for ds in datasets if any(_num(m, ds) is not None for m in all_models)]
+    models = [m for m in all_models if any(_num(m, ds) is not None for ds in datasets)]
+    if len(datasets) < 2 or not models:
+        return []
+    if spec.lower_better is not None:       # 按主指标均值排（跨数据集的总体强弱）
+        def _mean(m):
+            v = [x for ds in datasets if (x := _num(m, ds)) is not None]
+            return sum(v) / len(v)
+        models.sort(key=_mean, reverse=not spec.lower_better)
+    best_of = {}                            # 每个数据集（列）内的最优模型
+    for ds in datasets:
+        vals = [(m, _num(m, ds)) for m in models if _num(m, ds) is not None]
+        if len(vals) >= 2 and spec.lower_better is not None:
+            best_of[ds] = (min if spec.lower_better else max)(vals, key=lambda t: t[1])[0]
+    rows = []
+    for m in models:
+        cells = [m]
+        for ds in datasets:
+            txt = fmt_value(cell.get((m, ds), ""), spec)
+            if best_of.get(ds) == m and txt != "—":
+                txt = f"**{txt}**"
+            cells.append(txt)
+        rows.append(cells)
+    arrow = "↓" if spec.lower_better else "↑"
+    return _md_table([f"{spec.label or prim} {arrow}"] + list(datasets), rows)
+
+
 def render_module_table(module, module_rows, cfg):
     records, metric_cols, has_multi_ds, extra = pivot(module_rows)
     if not records:
         return ""
     cols = metric_cols + extra                      # 指标列 + rtf/内存
     specs = {c: METRIC_FORMATS.get(c, _DEFAULT_FMT) for c in cols}
-    # 排序：按主指标
     prim = (cfg.get("report", {}).get("primary_metric", {}) or {}).get(module)
-    if prim in metric_cols:
-        ps = specs[prim]
-        def _k(rc):
-            try:
-                return (0, float(rc.get(prim, "")) * (1 if ps.lower_better else -1))
-            except (TypeError, ValueError):
-                return (1, 0.0)
-        records = sorted(records, key=_k)
-    best = {c: _best_index(records, c, specs[c]) for c in cols}
 
-    head = (["模型"] + (["数据集"] if has_multi_ds else [])
-            + [specs[c].label or c for c in cols])
-    lines = ["| " + " | ".join(head) + " |",
-             "|" + "|".join(["---"] * len(head)) + "|"]
-    for i, rc in enumerate(records):
-        cells = [rc["model"]] + ([rc["dataset"]] if has_multi_ds else [])
-        for c in cols:
-            txt = fmt_value(rc.get(c, ""), specs[c])
-            if best[c] == i and txt != "—":
-                txt = f"**{txt}**"
-            cells.append(txt)
-        lines.append("| " + " | ".join(cells) + " |")
-
-    # 口径标注 + 小结
     scope = _fill_scope(module, cfg)
     out = [f"**{module_label(module, cfg)}**"]
     if scope:
         out.append(f"> 口径：{scope}")
     out.append("")
-    out += lines
-    if prim in metric_cols and best.get(prim) is not None:
-        bi = best[prim]
+
+    if not has_multi_ds:                            # 单数据集：一张表就够
+        records = _sort_by_primary(records, prim, specs, metric_cols)
+        lines, best = _render_rows(records, cols, specs)
+        out += lines
+        if prim in metric_cols and best.get(prim) is not None:
+            bi = best[prim]
+            out += ["", f"> 最优：{records[bi]['model']} "
+                        f"{specs[prim].label}={fmt_value(records[bi].get(prim, ''), specs[prim])}"]
+        return "\n".join(out)
+
+    # 多数据集：先主指标矩阵（同一列=同一数据集，纵向直接比模型），再按数据集分表列全指标。
+    # 跨数据集混在一张表里比不了——加粗的"最优"会落到别的数据集的行上。
+    datasets = []
+    for rc in records:                              # 保持首见顺序
+        if rc["dataset"] not in datasets:
+            datasets.append(rc["dataset"])
+    if prim in metric_cols and len(datasets) > 1:
+        matrix = _primary_matrix(records, datasets, prim, specs[prim])
+        if matrix:
+            out += matrix
+            out.append("")
+    for ds in datasets:
+        grp = _sort_by_primary([rc for rc in records if rc["dataset"] == ds],
+                               prim, specs, metric_cols)
+        # 组内全空的列不显示（各数据集适用指标不同，如 TTS 的 GT 锚点只有部分集有）
+        gcols = [c for c in cols if any(rc.get(c, "") not in ("", None) for rc in grp)]
+        if not gcols:
+            continue
+        lang = grp[0].get("lang") or ""
+        out.append(f"*{ds}*" + (f"（{lang}）" if lang else ""))
         out.append("")
-        out.append(f"> 最优：{records[bi]['model']} "
-                   f"{specs[prim].label}={fmt_value(records[bi].get(prim, ''), specs[prim])}")
-    return "\n".join(out)
+        out += _render_rows(grp, gcols, specs)[0]
+        out.append("")
+    return "\n".join(out).rstrip()
 
 
 def _fill_scope(module, cfg):

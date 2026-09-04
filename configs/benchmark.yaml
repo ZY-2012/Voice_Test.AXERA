@@ -34,7 +34,7 @@ download:
 # label 供 README/汇总标题用；scope 为口径标注模板（{...} 引用 subset 计数，report.py 填充）
 modules:
   asr: { label: 语音识别 ASR,   scope: "AISHELL-1 中文 {zh_per_set} 条 CER / ESB 英文各 {en_per_set} 条 WER · RTF 不含加载" }
-  vad: { label: 语音活动检测 VAD, scope: "逐句集各 {en_utts} 条 + TEN VAD 官方 {tenvad_utts} 条 + Picovoice 长流 · 帧级指标" }
+  vad: { label: 语音活动检测 VAD, scope: "逐句集各 {en_utts} 条 + TEN VAD 官方 {ten_official_utts} 条 + Picovoice 长流 · 帧级指标" }
   se:  { label: 语音增强 SE,    scope: "VoiceBank-DEMAND {pairs} 对 · PESQ/STOI/SI-SNR · RTF 不含加载" }
   tts: { label: 语音合成 TTS,   scope: "AISHELL-3 中文 {zh_utts} 条回环 CER · RTF 不含加载" }
 
@@ -55,7 +55,7 @@ subset:
   vad:
     en_utts: 200          # LibriVAD/AISHELL 逐句集抽样条数
     picovoice_full: true  # Picovoice 长流是单条音频，不抽样
-    tenvad_utts: 30       # TEN VAD 官方测试集全量（共 30 条）
+    ten_official_utts: 30 # TEN VAD 官方测试集全量（共 30 条，数据集名 ten_official）
   se:
     pairs: 200            # VoiceBank-DEMAND 抽样对数
   tts:

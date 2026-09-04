@@ -29,15 +29,15 @@ from common import load_config
 _CFG = load_config()
 DATA_ROOT = Path(_CFG["paths"]["data_root"])
 MODEL_ROOT = Path(_CFG["paths"]["model_root"])
-OUT_DIR = DATA_ROOT / "vad" / "tenvad" / "test"
+OUT_DIR = DATA_ROOT / "vad" / "ten_official" / "test"
 SR = 16000
 
 
 def find_src():
     """定位官方 testset 目录（模型仓库自带优先）。"""
     for cand in (MODEL_ROOT / "ten-vad" / "testset",
-                 DATA_ROOT / "vad" / "tenvad" / "raw" / "testset",
-                 DATA_ROOT / "vad" / "tenvad" / "raw"):
+                 DATA_ROOT / "vad" / "ten_official" / "raw" / "testset",
+                 DATA_ROOT / "vad" / "ten_official" / "raw"):
         if cand.is_dir() and any(cand.glob("*.scv")):
             return cand
     return None

@@ -8,7 +8,7 @@ TEN VAD 只提供 C API/可执行（ten-vad.axera 仓库），无 python 绑定�
 帧长 = 256 采样（16ms，example.c 的 hop_size），故参考标签按 16ms 分帧；
 silero 为 32ms —— 帧级 P/R/F1 对帧长不敏感，note 列记录实际帧长以便追溯。
 
-用法: python eval_tenvad.py [--dataset tenvad librivad aishell1 picovoice]
+用法: python eval_tenvad.py [--dataset ten_official librivad aishell1 picovoice]
 环境: LIMIT=N 小样冒烟；PICO_SEC=600 picovoice 长流截前 N 秒（默认 600）
 """
 import argparse
@@ -24,7 +24,7 @@ import numpy as np
 
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "tools"))
-from common import load_config, read_cmm_mb, remap
+from common import load_config, CmmDelta, remap
 import metrics_vad as V
 
 HOP = 256                      # example.c 固定帧移：256 采样 = 16ms @16k
@@ -60,23 +60,25 @@ def _child_rss_mb(pid):
 
 
 class _MemPeak(threading.Thread):
-    """子进程运行期间轮询 NPU CMM 与子进程峰值 RSS。
-    不能用 resource.getrusage(RUSAGE_CHILDREN).ru_maxrss：它是"历来所有已回收子进程
-    的最大值"，单调不减且混入 python 自身 fork 的开销（实测 11.8MB vs 真实 4.0MB），
-    无法归因到当前数据集。"""
+    """子进程运行期间轮询 NPU CMM 增量与子进程峰值 RSS。
+    CMM 用 CmmDelta（峰值−基线）：/proc 里是全板共享计数，绝对值被其它子系统
+    底噪主导（本板约 276MB），只有增量能归因到模型。
+    RSS 不能用 resource.getrusage(RUSAGE_CHILDREN).ru_maxrss：它是"历来所有已
+    回收子进程的最大值"，单调不减且混入 python 自身 fork 的开销（实测 11.8MB
+    vs 真实 4.0MB），无法归因到当前数据集。"""
 
-    def __init__(self, pid, interval=0.02):
+    def __init__(self, pid, cmm_probe=None, interval=0.02):
         super().__init__(daemon=True)
         # 注意别用 self._stop：Thread 内部已有同名方法，覆盖会让 join() 崩
         self.pid, self.interval = pid, interval
-        self.cmm = self.rss = None
+        self.cmm_probe = cmm_probe or CmmDelta()
+        self.rss = None
         self._stop_evt = threading.Event()
 
     def run(self):
         while not self._stop_evt.is_set():
-            c, r = read_cmm_mb(), _child_rss_mb(self.pid)
-            if c is not None and (self.cmm is None or c > self.cmm):
-                self.cmm = c
+            self.cmm_probe.sample()
+            r = _child_rss_mb(self.pid)
             if r is not None and (self.rss is None or r > self.rss):
                 self.rss = r
             time.sleep(self.interval)
@@ -84,17 +86,20 @@ class _MemPeak(threading.Thread):
     def stop(self):
         self._stop_evt.set()
         self.join(timeout=1)
-        return self.cmm, self.rss
+        return self.cmm_probe.delta, self.rss
 
 
 def infer_one(exe, workdir, wav_path, out_wav, sample_mem=False):
-    """跑一条 → (probs, infer_sec, audio_sec, (cmm_peak, rss_peak))。失败返回 None。"""
+    """跑一条 → (probs, infer_sec, audio_sec, (cmm_delta, rss_peak))。失败返回 None。"""
+    # CMM 基线必须在 fork 之前取：ten_vad_create 在进程启动后几毫秒就分配 NPU 内存，
+    # 晚取基线会把模型自己的占用算进底噪，delta 偏小
+    cmm_probe = CmmDelta() if sample_mem else None
     proc = subprocess.Popen([str(exe), str(wav_path), str(out_wav)], cwd=str(workdir),
                             env=_run_env(workdir), stdout=subprocess.PIPE,
                             stderr=subprocess.STDOUT, text=True)
     sampler = None
     if sample_mem:
-        sampler = _MemPeak(proc.pid)
+        sampler = _MemPeak(proc.pid, cmm_probe=cmm_probe)
         sampler.start()
     try:
         out, _ = proc.communicate(timeout=600)
@@ -191,7 +196,7 @@ def main():
     cfg = load_config()
     ap = argparse.ArgumentParser()
     ap.add_argument("--dataset", nargs="+",
-                    default=["tenvad", "librivad", "aishell1", "picovoice"])
+                    default=["ten_official", "librivad", "aishell1", "picovoice"])
     args = ap.parse_args()
     exe, workdir = tenvad_paths(cfg)
     if not exe.exists():
