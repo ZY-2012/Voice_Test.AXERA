@@ -147,6 +147,30 @@ def tts_cosyvoice2(model_dir, chip, lang, text, outp):
 #   rtf_pure_re: 二进制自报计时的正则（对 _run.log 全文匹配，各组求和 = 单条纯推理秒数）
 #   batch_driver: 改用"载入一次 + warmup"的批量驱动脚本（python 模型用）
 #   两者皆无 -> 该模型拿不到纯 RTF，只写 rtf_e2e（含加载）并在 note 标注
+def tts_pocket_tts_zh_en(model_dir, chip, lang, text, outp):
+    """零样本（参考音色用包内 Vivian.wav）；单条回退路径。
+
+    批量基准优先走 batch_driver=pocket_tts_zh_en_batch.py（载入一次，纯 RTF 口径）。
+    """
+    md = Path(model_dir)
+    models = md / "models"
+    argv = ["python3", "-B", str(md / "board" / "pocket_tts_axera.py"),
+            "--text", text, "--reference", str(models / "Vivian.wav"),
+            "--output", str(outp),
+            "--onnx-dir", str(models), "--axmodel-dir", str(models),
+            "--cpu-model-dir", str(models), "--mimi-split-dir", str(models / "mimi_split"),
+            "--spm", str(models / "chn_jpn_yue_eng_ko_spectok.bpe.model"),
+            "--threads", "4", "--prefill-threads", "8",
+            "--npu-flow-net", "1", "--npu-mimi-conv", "1",
+            "--flow-ar-model", "flow_ar_step_int8.onnx",
+            "--flow-net-model", "flow_net_step_fp32.axmodel",
+            "--flow-prefill-model", "flow_step_int8.onnx",
+            "--mimi-tf-model", "mimi_transformer_step_int8.onnx",
+            "--encoder-dir", str(models / "encoder"),
+            "--chunk", "1", "--pause-ms", "120"]
+    return str(md), argv
+
+
 REGISTRY = {
     # SE
     "gtcrn":        {"kind": "se", "sr": 16000, "builder": se_gtcrn},
@@ -166,6 +190,10 @@ REGISTRY = {
                      "rtf_pure_re": [r"NPU total:\s*([\d.]+)\s*s",
                                      r"Vocoder total:\s*([\d.]+)\s*s",
                                      r"推理耗时:\s*([\d.]+)s"]},
+    "pocket_tts_zh_en": {"kind": "tts", "sr": 24000, "type": "zeroshot", "langs": ["zh", "en"],
+                         "builder": tts_pocket_tts_zh_en,
+                         # 载入一次 + warmup 1 条，只计推理（纯 RTF 的正确来源）
+                         "batch_driver": "pocket_tts_zh_en_batch.py"},
     "cosyvoice2":   {"kind": "tts", "sr": 24000, "type": "cpp",      "langs": ["zh", "en"], "builder": tts_cosyvoice2,
                      "out_glob": "output*.wav", "heavy": True},
                      # main_ax650 只打印 decode tokens，不自报耗时 -> 无纯 RTF（仅 rtf_e2e）

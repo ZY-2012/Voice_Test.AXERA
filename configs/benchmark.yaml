@@ -100,6 +100,8 @@ models:
     melotts:      { hf: AXERA-TECH/MeloTTS,          dir: MeloTTS }
     zipvoice:     { hf: AXERA-TECH/ZipVoice.AXERA,   dir: ZipVoice.AXERA_HUG }  # distill 版 num_step=4；HF 副本较完整（cpp/ 由软链补，英文 G2P daemon 需要）
     cosyvoice2:   { hf: AXERA-TECH/Cosyvoice2.Axera, dir: CosyVoice2 }
+    # 中英双语零样本（参考音色用包内 Vivian.wav）；HF 推理包自带 axmodel+int8 ONNX+运行时
+    pocket_tts_zh_en: { hf: HY-2012/pocket-tts-zh-en.AXERA, dir: pocket-tts-zh-en.AXERA }
 
 # ============ 评估口径 ============
 eval:
