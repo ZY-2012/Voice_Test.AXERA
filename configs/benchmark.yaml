@@ -102,6 +102,8 @@ models:
     cosyvoice2:   { hf: AXERA-TECH/Cosyvoice2.Axera, dir: CosyVoice2 }
     # 中英双语零样本（参考音色用包内 Vivian.wav）；HF 推理包自带 axmodel+int8 ONNX+运行时
     pocket_tts_zh_en: { hf: HY-2012/pocket-tts-zh-en.AXERA, dir: pocket-tts-zh-en.AXERA }
+    # 拼音版（int8-only 混合路线；FlowLM CPU int8 + flow_net/mimi/编码器 NPU）
+    pocket_tts_zh_en_pinyin: { hf: HY-2012/pocket-tts-zh-en-pinyin.AXERA, dir: pocket-tts-zh-en-pinyin.AXERA }
 
 # ============ 评估口径 ============
 eval:
