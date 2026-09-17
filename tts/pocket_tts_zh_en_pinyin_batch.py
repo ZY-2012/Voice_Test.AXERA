@@ -45,7 +45,7 @@ def build_runtime(threads=4, prefill_threads=8, npu_flow_net=True):
         mimi_conv_model="mimi_conv_step.axmodel",
         flow_ar_model="flow_ar_step.onnx",
         flow_prefill_model="flow_step_windowed.onnx",
-        mimi_tf_model="mimi_transformer_step.onnx",
+        mimi_tf_model="mimi_transformer_step_int8.onnx",
         encoder_dir=str(MODELS / "encoder"),
         prefill_threads=prefill_threads,
     )

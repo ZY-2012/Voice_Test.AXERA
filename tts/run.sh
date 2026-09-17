@@ -77,7 +77,7 @@ for ds in $DATASETS; do
     DRV="$($PY -c "import sys;sys.path.insert(0,'$REPO_DIR/tools');from model_registry import REGISTRY;print(REGISTRY.get('$m',{}).get('batch_driver',''))" 2>/dev/null)"
     if [ -n "$DRV" ] && [ -f "$REPO_DIR/tts/$DRV" ]; then
       echo "  合成用批量驱动 $DRV（载入一次，纯 RTF）"
-      $PY "$REPO_DIR/tts/$DRV" --dataset "$ds" $MLIM || { echo "  合成失败，跳过"; continue; }
+      $PY "$REPO_DIR/tts/$DRV" --dataset "$ds" $MLIM ${TTS_FRESH:+--fresh} || { echo "  合成失败，跳过"; continue; }
     else
       # TTS_FRESH=1：忽略已存在 wav 强制重合成（合成口径/参数变更后作废旧产物时用）
       $PY "$REPO_DIR/tts/synth_batch.py" --model "$m" --dataset "$ds" --chip "$CHIP" $MLIM \
